@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Rondas Guardia Municipal",
+    "slug": "appmunicipal-guardias",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "guardiasgam",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "bo.gob.cochabamba.guardias",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Se usa la cámara para la foto de verificación de inicio de servicio y para adjuntar evidencia a los reportes de incidentes.",
+        "NSMicrophoneUsageDescription": "Se usa el micrófono para grabar videos de evidencia al registrar un incidente.",
+        "NSLocationWhenInUseUsageDescription": "Se usa su ubicación para registrar el inicio/cierre de turno, la ruta de patrullaje y la ubicación de incidentes y mandados.",
+        "NSFaceIDUsageDescription": "Se usa Face ID para iniciar sesión y confirmar alertas de emergencia de forma rápida y segura."
+      }
+    },
+    "android": {
+      "package": "bo.gob.cochabamba.guardias",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Se usa la cámara para la foto de verificación de inicio de servicio y para adjuntar evidencia a los reportes de incidentes.",
+          "microphonePermission": "Se usa el micrófono para grabar videos de evidencia al registrar un incidente.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Se usa su ubicación para registrar el inicio/cierre de turno, la ruta de patrullaje y la ubicación de incidentes y mandados."
+        }
+      ]
+    ]
+  }
+}
