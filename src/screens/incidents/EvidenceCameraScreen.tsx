@@ -12,7 +12,7 @@ type Props = NativeStackScreenProps<AppStackParamList, 'EvidenceCamera'>;
 
 
 export function EvidenceCameraScreen({ navigation, route }: Props) {
-  const { modo, evidenciasPrevias, returnTo } = route.params;
+  const { modo, evidenciasPrevias, returnTo, borrador } = route.params;
   const [permisoCamara, solicitarPermisoCamara] = useCameraPermissions();
   const [permisoMic, solicitarPermisoMic] = useMicrophonePermissions();
   const [ocupado, setOcupado] = useState(false);
@@ -26,7 +26,16 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
   const volver = (uri: string) => {
     navigation.navigate({
       name: returnTo,
-      params: { evidenciaUris: [...evidenciasPrevias, uri] },
+      params: { evidenciaUris: [...evidenciasPrevias, uri], borrador },
+      merge: true,
+    } as never);
+  };
+
+  // Cancelar: vuelve al formulario conservando lo ya cargado (evidencias y borrador).
+  const cancelar = () => {
+    navigation.navigate({
+      name: returnTo,
+      params: { evidenciaUris: evidenciasPrevias, borrador },
       merge: true,
     } as never);
   };
@@ -83,7 +92,7 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
             if (modo === 'video') await solicitarPermisoMic();
           }}
         />
-        <Button label="Cancelar" variant="outline" onPress={() => navigation.goBack()} />
+        <Button label="Cancelar" variant="outline" onPress={cancelar} />
       </View>
     );
   }
@@ -126,7 +135,7 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
             onPress={alternarVideo}
           />
         )}
-        <Button label="Cancelar" variant="outline" onPress={() => navigation.goBack()} />
+        <Button label="Cancelar" variant="outline" onPress={cancelar} />
       </View>
     </View>
   );

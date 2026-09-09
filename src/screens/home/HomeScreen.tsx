@@ -124,7 +124,15 @@ export function HomeScreen() {
             label="Iniciar servicio"
             icon="play-circle"
             large
-            onPress={() => navigation.navigate('StartServiceCamera')}
+            onPress={() => {
+              console.log('[HomeScreen] onPress Iniciar servicio');
+              try {
+                navigation.navigate('StartServiceCamera');
+                console.log('[HomeScreen] navigate OK');
+              } catch (e) {
+                console.log('[HomeScreen] navigate ERROR', e);
+              }
+            }}
           />
           <View style={styles.hintRow}>
             <Ionicons name="shield-checkmark" size={14} color={colors.textSecondary} />

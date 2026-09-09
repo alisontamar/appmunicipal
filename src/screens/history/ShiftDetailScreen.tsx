@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,12 +9,15 @@ import {
   EmptyState,
   ListRow,
   MapPlaceholder,
+  OsmMapView,
   ScreenContainer,
   SectionTitle,
   StatTile,
 } from '@/components';
+import { obtenerRecorrido } from '@/api/turnos';
 import { useShift } from '@/context/ShiftContext';
 import { mockTurnosHistoricos } from '@/mocks';
+import type { GeoPoint } from '@/types';
 import { riskColor } from '@/theme';
 import {
   formatDistancia,
@@ -30,11 +33,35 @@ type Nav = NativeStackNavigationProp<AppStackParamList>;
 export function ShiftDetailScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
   const { turno: turnoActual, historialTurnos } = useShift();
+  const { turnoId } = route.params;
 
   const turno =
-    (turnoActual?.id === route.params.turnoId ? turnoActual : undefined) ??
-    historialTurnos.find((t) => t.id === route.params.turnoId) ??
-    mockTurnosHistoricos.find((t) => t.id === route.params.turnoId);
+    (turnoActual?.id === turnoId ? turnoActual : undefined) ??
+    historialTurnos.find((t) => t.id === turnoId) ??
+    mockTurnosHistoricos.find((t) => t.id === turnoId);
+
+  // Recorrido real (breadcrumb GPS) traído del backend. Si falla (turno de
+  // ejemplo, sin conexión, aún sin puntos) se cae al recorrido local del turno.
+  const [recorrido, setRecorrido] = useState<GeoPoint[]>([]);
+  const [distanciaReal, setDistanciaReal] = useState<number | null>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    obtenerRecorrido(turnoId)
+      .then((r) => {
+        if (!vigente) return;
+        setRecorrido(r.puntos);
+        setDistanciaReal(r.distanciaMetros);
+      })
+      .catch(() => {
+        /* sin recorrido remoto: se usa el local */
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [turnoId]);
+
+  const puntos = recorrido.length > 0 ? recorrido : (turno?.recorrido ?? []);
 
   if (!turno) {
     return (
@@ -56,11 +83,25 @@ export function ShiftDetailScreen({ route }: Props) {
           value={formatDuracion(turno.horaInicio, turno.horaFin)}
           label="Duración"
         />
-        <StatTile icon="walk" value={formatDistancia(turno.distanciaMetros)} label="Distancia" />
+        <StatTile
+          icon="walk"
+          value={formatDistancia(distanciaReal ?? turno.distanciaMetros)}
+          label="Distancia"
+        />
       </View>
 
       <SectionTitle hint="RF-APP-09">Recorrido</SectionTitle>
-      <MapPlaceholder label={`Ronda trazada · ${turno.recorrido.length} puntos`} height={200} />
+      {puntos.length >= 2 ? (
+        <OsmMapView
+          key={`recorrido-${puntos.length}`}
+          centroInicial={{ latitud: puntos[0].latitud, longitud: puntos[0].longitud }}
+          recorridoInicial={puntos}
+          recorridoColor={colors.onDuty}
+          height={220}
+        />
+      ) : (
+        <MapPlaceholder label={`Ronda trazada · ${puntos.length} punto(s)`} height={200} />
+      )}
 
       <SectionTitle>{`Incidentes (${turno.incidentes.length})`}</SectionTitle>
       {turno.incidentes.length === 0 ? (

@@ -41,9 +41,12 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
     reintentar,
   } = useUbicacionActual();
 
-  const [tipo, setTipo] = useState<IncidentType | null>(null);
-  const [descripcion, setDescripcion] = useState('');
-  const [riesgo, setRiesgo] = useState<RiskLevel | null>(null);
+  // El borrador puede venir en los params al volver de la cámara: así abrir
+  // "Agregar foto/video" no borra el tipo, la descripción ni el nivel de riesgo.
+  const borrador = route.params?.borrador;
+  const [tipo, setTipo] = useState<IncidentType | null>(borrador?.tipo ?? null);
+  const [descripcion, setDescripcion] = useState(borrador?.descripcion ?? '');
+  const [riesgo, setRiesgo] = useState<RiskLevel | null>(borrador?.riesgo ?? null);
   const [evidencias, setEvidencias] = useState<string[]>(route.params?.evidenciaUris ?? []);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -53,6 +56,7 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
       modo: kind,
       evidenciasPrevias: evidencias,
       returnTo: 'RegisterIncident',
+      borrador: { tipo, descripcion, riesgo },
     });
 
   const quitarEvidencia = (uri: string) =>
@@ -63,6 +67,15 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
       setEvidencias(route.params.evidenciaUris);
     }
   }, [route.params?.evidenciaUris]);
+
+  // Al regresar de la cámara, rehidrata el formulario por si el screen se
+  // remontó y el estado local se perdió.
+  React.useEffect(() => {
+    if (!borrador) return;
+    setTipo(borrador.tipo);
+    setDescripcion(borrador.descripcion);
+    setRiesgo(borrador.riesgo);
+  }, [borrador]);
 
   const enviar = async () => {
     if (!tipo || !riesgo || descripcion.trim().length < 5) {

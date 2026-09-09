@@ -12,6 +12,7 @@ import {
   type OsmMapViewHandle,
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
+import { patrullaVigente, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
 import { mockZonaAsignada } from '@/mocks';
 import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
@@ -25,7 +26,26 @@ export function MapScreen() {
   const { turno, enServicio } = useShift();
   const [miUbicacion, setMiUbicacion] = useState<GeoPoint | null>(null);
   const [errorUbicacion, setErrorUbicacion] = useState<string | null>(null);
+  const [zona, setZona] = useState<ZonaPunto[]>(mockZonaAsignada);
   const mapRef = useRef<OsmMapViewHandle>(null);
+
+  // Ruta / zona asignada del dia (v_patrulla_vigente). Si hoy no hay patrulla o
+  // la ruta no tiene trazado, se deja el poligono de referencia.
+  useEffect(() => {
+    let vigente = true;
+    patrullaVigente()
+      .then((p) => {
+        if (!vigente) return;
+        const puntos = trazadoAZona(p?.trazado ?? null);
+        if (puntos.length > 0) setZona(puntos);
+      })
+      .catch(() => {
+        /* sin patrulla / sin conexion: se mantiene la zona de referencia */
+      });
+    return () => {
+      vigente = false;
+    };
+  }, []);
 
   // Sigue la ubicación en vivo mientras la pantalla está montada (RF-APP-10).
   useEffect(() => {
@@ -82,7 +102,7 @@ export function MapScreen() {
       <OsmMapView
         ref={mapRef}
         centroInicial={{ latitud: BASE_LAT, longitud: BASE_LNG }}
-        zona={mockZonaAsignada}
+        zona={zona}
         zonaColor={colors.gold}
         recorridoColor={colors.onDuty}
         height={280}

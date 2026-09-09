@@ -8,6 +8,7 @@ import { HistoryScreen } from '@/screens/history/HistoryScreen';
 import { ProfileScreen } from '@/screens/profile/ProfileScreen';
 import { FloatingTabBar } from './FloatingTabBar';
 import { SosButton } from '@/components/SosButton';
+import { CheckpointBanner } from '@/components/CheckpointBanner';
 import type { TabsParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabsParamList>();
@@ -27,6 +28,7 @@ export function TabsNavigator() {
         <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Historial' }} />
         <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Perfil' }} />
       </Tab.Navigator>
+      <CheckpointBanner />
       <SosButton />
     </>
   );

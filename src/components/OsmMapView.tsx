@@ -27,6 +27,8 @@ interface Props {
   zona?: OsmPoint[];
   zonaColor?: string;
   recorridoColor?: string;
+  /** Polyline del recorrido ya dibujada al cargar el mapa (evita la carrera con injectJavaScript). */
+  recorridoInicial?: OsmPoint[];
   height?: number;
 }
 
@@ -44,13 +46,20 @@ interface Props {
  * HTML completo, para evitar parpadeos al moverse el guardia.
  */
 export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapView(
-  { centroInicial, zona = [], zonaColor = '#C9A227', recorridoColor = '#2E7D32', height = 280 },
+  {
+    centroInicial,
+    zona = [],
+    zonaColor = '#C0906C',
+    recorridoColor = '#2E7D32',
+    recorridoInicial = [],
+    height = 280,
+  },
   ref,
 ) {
   const webRef = useRef<WebView>(null);
 
   const html = useMemo(
-    () => buildHtml(centroInicial, zona, zonaColor, recorridoColor),
+    () => buildHtml(centroInicial, zona, zonaColor, recorridoColor, recorridoInicial),
     // Solo se reconstruye si cambia el centro inicial o la zona; las actualizaciones
     // de ubicación/recorrido/incidentes viajan después por injectJavaScript.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,8 +113,10 @@ function buildHtml(
   zona: OsmPoint[],
   zonaColor: string,
   recorridoColor: string,
+  recorridoInicial: OsmPoint[] = [],
 ): string {
   const zonaCoords = JSON.stringify(zona.map((p) => [p.latitud, p.longitud]));
+  const recorridoCoords = JSON.stringify(recorridoInicial.map((p) => [p.latitud, p.longitud]));
   return `
 <!DOCTYPE html>
 <html>
@@ -145,7 +156,10 @@ function buildHtml(
     });
 
     var miMarcador = null;
-    var recorridoLinea = L.polyline([], { color: '${recorridoColor}', weight: 4 }).addTo(map);
+    var recorridoLinea = L.polyline(${recorridoCoords}, { color: '${recorridoColor}', weight: 4 }).addTo(map);
+    if (${recorridoCoords}.length > 1) {
+      try { map.fitBounds(recorridoLinea.getBounds(), { padding: [24, 24] }); } catch (e) {}
+    }
     var incidenteMarcadores = {};
 
     window.setMiUbicacion = function (lat, lng) {

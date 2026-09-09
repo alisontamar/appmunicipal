@@ -1,43 +1,141 @@
-import { delay } from './client';
-import { mockTurnosHistoricos } from '@/mocks';
-import type { GeoPoint, Turno } from '@/types';
+import { request } from './client';
+import type { GeoPoint, ShiftStatus, Turno } from '@/types';
 
-/** RF-APP-03 - iniciar servicio: foto + GPS + hora de inicio. */
-export async function iniciarServicio(_fotoUri: string, _ubicacion: GeoPoint): Promise<Turno> {
-  return delay({
-    id: `t-${Date.now()}`,
-    guardiaId: 'g-001',
-    estado: 'en_servicio',
-    fotoInicioUrl: _fotoUri,
-    ubicacionInicio: _ubicacion,
-    horaInicio: _ubicacion.timestamp,
-    distanciaMetros: 0,
-    recorrido: [_ubicacion],
+/** Forma del turno que devuelve el backend. */
+interface TurnoDTO {
+  id: string;
+  guardiaId: string;
+  estado: 'en_servicio' | 'finalizado' | 'anulado';
+  selfieInicioUrl: string;
+  latInicio: number;
+  lngInicio: number;
+  horaInicio: string;
+  latFin: number | null;
+  lngFin: number | null;
+  horaFin: string | null;
+  distanciaMetros: number;
+  patrullaId: string | null;
+  createdAt: string;
+}
+
+function punto(lat: number, lng: number, ts: string): GeoPoint {
+  return { latitud: lat, longitud: lng, timestamp: ts };
+}
+
+function mapEstado(e: TurnoDTO['estado']): ShiftStatus {
+  return e === 'en_servicio' ? 'en_servicio' : 'finalizado';
+}
+
+/**
+ * El backend no guarda el recorrido/incidentes/mandados dentro del turno (van en
+ * tablas aparte). Al mapear dejamos esos arreglos vacíos: durante el turno en
+ * curso los llena el ShiftContext en memoria.
+ */
+function mapTurno(d: TurnoDTO): Turno {
+  const inicio = punto(d.latInicio, d.lngInicio, d.horaInicio);
+  return {
+    id: d.id,
+    guardiaId: d.guardiaId,
+    estado: mapEstado(d.estado),
+    fotoInicioUrl: d.selfieInicioUrl,
+    ubicacionInicio: inicio,
+    horaInicio: d.horaInicio,
+    ubicacionFin:
+      d.latFin != null && d.lngFin != null && d.horaFin
+        ? punto(d.latFin, d.lngFin, d.horaFin)
+        : undefined,
+    horaFin: d.horaFin ?? undefined,
+    distanciaMetros: d.distanciaMetros ?? 0,
+    recorrido: [inicio],
     incidentes: [],
     mandados: [],
+    checkpoints: [],
+  };
+}
+
+/** RF-APP-03 — iniciar servicio: selfie + GPS + hora de inicio. */
+export async function iniciarServicio(fotoUri: string, ubicacion: GeoPoint): Promise<Turno> {
+  const d = await request<TurnoDTO>('/turnos', {
+    method: 'POST',
+    body: JSON.stringify({
+      selfieInicioUrl: fotoUri,
+      lat: ubicacion.latitud,
+      lng: ubicacion.longitud,
+      horaInicio: ubicacion.timestamp,
+    }),
   });
+  return mapTurno(d);
 }
 
-/** RF-APP-05 - envio periodico de ubicacion GPS durante el servicio. */
-export async function enviarUbicacion(_turnoId: string, _punto: GeoPoint): Promise<{ ok: boolean }> {
-  return delay({ ok: true }, 200);
+/** RF-APP-05 — envío periódico de ubicación GPS (va a la tabla de telemetría). */
+export async function enviarUbicacion(turnoId: string, p: GeoPoint): Promise<{ ok: boolean }> {
+  await request('/telemetry', {
+    method: 'POST',
+    body: JSON.stringify({
+      turnoId,
+      lat: p.latitud,
+      lng: p.longitud,
+      capturadoEn: p.timestamp,
+    }),
+  });
+  return { ok: true };
 }
 
-/** RF-APP-07 - cerrar servicio: ubicacion + hora de cierre. */
+/** RF-APP-07 — cerrar servicio. El backend calcula la distancia total del turno. */
 export async function cerrarServicio(turno: Turno, ubicacionFin: GeoPoint): Promise<Turno> {
-  return delay({
+  const d = await request<TurnoDTO>(`/turnos/${turno.id}/cerrar`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      lat: ubicacionFin.latitud,
+      lng: ubicacionFin.longitud,
+      horaFin: ubicacionFin.timestamp,
+    }),
+  });
+  // Conservamos lo acumulado en el dispositivo durante el turno.
+  return {
     ...turno,
     estado: 'finalizado',
     ubicacionFin,
-    horaFin: ubicacionFin.timestamp,
-  });
+    horaFin: d.horaFin ?? ubicacionFin.timestamp,
+    distanciaMetros: d.distanciaMetros ?? turno.distanciaMetros,
+  };
 }
 
-/** RF-APP-09 - historial de turnos propios. */
+/** RF-APP-09 — historial de turnos propios. */
 export async function listarTurnos(): Promise<Turno[]> {
-  return delay(mockTurnosHistoricos);
+  const d = await request<TurnoDTO[]>('/turnos?guardia=me');
+  return d.map(mapTurno);
 }
 
 export async function obtenerTurno(id: string): Promise<Turno | undefined> {
-  return delay(mockTurnosHistoricos.find((t) => t.id === id));
+  const todos = await listarTurnos();
+  return todos.find((t) => t.id === id);
+}
+
+export interface RecorridoTurno {
+  turnoId: string | null;
+  guardiaId: string;
+  total: number;
+  distanciaMetros: number | null;
+  puntos: GeoPoint[]; // orden ascendente por capturadoEn
+}
+
+interface RecorridoDTO {
+  turnoId: string | null;
+  guardiaId: string;
+  total: number;
+  distanciaMetros: number | null;
+  puntos: { lat: number; lng: number; capturadoEn: string; esSos: boolean }[];
+}
+
+/** Recorrido real (breadcrumb GPS) que quedó guardado del turno. */
+export async function obtenerRecorrido(turnoId: string): Promise<RecorridoTurno> {
+  const d = await request<RecorridoDTO>(`/turnos/${turnoId}/recorrido`);
+  return {
+    turnoId: d.turnoId,
+    guardiaId: d.guardiaId,
+    total: d.total,
+    distanciaMetros: d.distanciaMetros,
+    puntos: d.puntos.map((p) => ({ latitud: p.lat, longitud: p.lng, timestamp: p.capturadoEn })),
+  };
 }

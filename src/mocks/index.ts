@@ -74,6 +74,7 @@ export const mockTurnosHistoricos: Turno[] = [
     ],
     incidentes: [mockIncidentesHistoricos[1]],
     mandados: [],
+    checkpoints: [],
   },
   {
     id: 't-900',
@@ -92,6 +93,7 @@ export const mockTurnosHistoricos: Turno[] = [
     ],
     incidentes: [mockIncidentesHistoricos[0]],
     mandados: [mockMandadosHistoricos[0]],
+    checkpoints: [],
   },
 ];
 

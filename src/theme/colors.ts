@@ -1,16 +1,20 @@
 /**
  * Paleta institucional G.A.M. Cochabamba - Direccion de Seguridad Ciudadana.
- * Valores aproximados del material grafico compartido (ver requerimientos 3.2).
+ * Colores tomados del escudo oficial (assets/escudo.webp): negro cálido + dorado
+ * bronce. Reemplaza el azul/amarillo anterior.
+ *
+ * Nota: las claves `navy*` se conservan por compatibilidad con el código
+ * existente, pero ahora son tonos de negro cálido, no azules.
  */
 export const colors = {
-  // Azules institucionales
-  navy900: '#0B1F3A', // headers, navegacion
-  navy800: '#0D1B3E',
-  navy700: '#13294B', // paneles, tarjetas
+  // Negro cálido institucional (fondo del escudo)
+  navy900: '#1C1A19', // headers, navegacion, splash, login
+  navy800: '#262220',
+  navy700: '#332E2A', // paneles, tarjetas sobre fondo oscuro
 
-  // Acento dorado (escudo, iconos, detalles)
-  gold: '#C9A227',
-  goldLight: '#D4AF37',
+  // Acento dorado bronce (linework del escudo, iconos, detalles)
+  gold: '#C0906C',
+  goldLight: '#D4AF8F',
 
   // Texto sobre fondo oscuro
   white: '#FFFFFF',

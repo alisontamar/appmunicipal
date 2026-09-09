@@ -9,7 +9,7 @@ import { useShift } from '@/context/ShiftContext';
 
 export function ProfileScreen() {
   const { guardia, signOut } = useAuth();
-  const { enServicio } = useShift();
+  const { enServicio, pendientesSincronizar, sincronizarAhora } = useShift();
 
   return (
     <ScreenContainer scroll statusBar="dark" header={<ScreenHeader title="Perfil" />}>
@@ -30,12 +30,33 @@ export function ProfileScreen() {
 
       <SectionTitle>Sincronización</SectionTitle>
       <Card>
-        <Row icon="cloud-done" label="Datos pendientes de enviar" value="0" />
-        <Row icon="time" label="Última sincronización" value="hace 2 min" last />
+        <Row
+          icon={pendientesSincronizar > 0 ? 'cloud-upload' : 'cloud-done'}
+          label="Datos pendientes de enviar"
+          value={String(pendientesSincronizar)}
+          last
+        />
       </Card>
-      <Text style={[typography.caption, styles.note]}>
-        Modo offline pendiente 
-      </Text>
+      {pendientesSincronizar > 0 ? (
+        <>
+          <Text style={[typography.caption, styles.note]}>
+            Hay datos guardados en el celular esperando señal para enviarse. Se sincronizan solos
+            apenas haya conexión.
+          </Text>
+          <Button
+            label="Reintentar sincronización ahora"
+            icon="sync"
+            variant="outline"
+            onPress={sincronizarAhora}
+            style={styles.syncBtn}
+          />
+        </>
+      ) : (
+        <Text style={[typography.caption, styles.note]}>
+          Todo sincronizado. Los incidentes, mandados, checkpoints y ubicación se guardan en el
+          celular y se envían solos si en algún momento no hay señal (RF-APP-11).
+        </Text>
+      )}
 
       <SectionTitle>Aplicación</SectionTitle>
       <Card>
@@ -93,5 +114,6 @@ const styles = StyleSheet.create({
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   rowLabel: { flex: 1 },
   note: { marginTop: spacing.sm },
+  syncBtn: { marginTop: spacing.sm },
   logout: { marginTop: spacing.xl },
 });

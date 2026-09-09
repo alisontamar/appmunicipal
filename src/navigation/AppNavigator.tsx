@@ -14,6 +14,7 @@ import { IncidentDetailScreen } from '@/screens/incidents/IncidentDetailScreen';
 import { RegisterErrandScreen } from '@/screens/errands/RegisterErrandScreen';
 import { ErrandSuccessScreen } from '@/screens/errands/ErrandSuccessScreen';
 import { ShiftDetailScreen } from '@/screens/history/ShiftDetailScreen';
+import { CheckpointCameraScreen } from '@/screens/service/CheckpointCameraScreen';
 import type { AppStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -80,6 +81,11 @@ export function AppNavigator() {
           name="ShiftDetail"
           component={ShiftDetailScreen}
           options={{ title: 'Detalle del turno' }}
+        />
+        <Stack.Screen
+          name="CheckpointCamera"
+          component={CheckpointCameraScreen}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="IncidentDetail"

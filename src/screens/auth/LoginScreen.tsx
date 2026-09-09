@@ -15,11 +15,27 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { colors, spacing, typography } from '@/theme';
 import { Button, TextField } from '@/components';
+import { ApiError } from '@/api/client';
 import { useAuth } from '@/context/AuthContext';
 import { autenticarConBiometria, biometriaDisponible } from '@/utils/biometria';
 import type { AuthStackParamList } from '@/navigation/types';
 
-const escudo = require('../../../assets/escudo.png');
+function mensajeError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'GUARDIA_PENDING_ACTIVATION') {
+      return 'Su cuenta aún no está activada. Use el código de activación que le entregó la Dirección.';
+    }
+    if (e.code === 'INVALID_CREDENTIALS') return 'Usuario o contraseña incorrectos.';
+    if (e.code === 'ACCOUNT_DISABLED') return 'Su cuenta está inactiva o suspendida. Consulte con la Dirección.';
+    if (e.code === 'RATE_LIMITED') return 'Demasiados intentos. Espere unos segundos e intente de nuevo.';
+    if (e.code === 'NETWORK_ERROR') return 'No se pudo conectar con el servidor. Verifique su conexión.';
+    if (e.message) return e.message;
+  }
+  if (e instanceof Error && e.message) return `No se pudo iniciar sesión: ${e.message}`;
+  return 'No se pudo iniciar sesión. Intente nuevamente.';
+}
+
+const escudo = require('../../../assets/escudo.webp');
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -44,8 +60,9 @@ export function LoginScreen({ navigation }: Props) {
     }
     try {
       await signIn(usuario.trim(), password);
-    } catch {
-      setError('No se pudo iniciar sesión. Intente nuevamente.');
+    } catch (e) {
+      console.warn('[login] falló el inicio de sesión:', e);
+      setError(mensajeError(e));
     }
   };
 
@@ -53,12 +70,10 @@ export function LoginScreen({ navigation }: Props) {
     if (!ultimoUsuario) return;
     const exito = await autenticarConBiometria('Ingrese con su huella o Face ID');
     if (!exito) return;
-    try {
-      // Fase estática de la biometría reemplaza la contraseña
-      await signIn(ultimoUsuario, 'biometria');
-    } catch {
-      setError('No se pudo iniciar sesión. Intente nuevamente.');
-    }
+    // La biometría solo confirma identidad en el dispositivo; la contraseña se
+    // sigue pidiendo porque el backend no tiene aún un flujo de token biométrico.
+    setUsuario(ultimoUsuario);
+    setError('Confirme su identidad ingresando su contraseña.');
   };
 
   return (
@@ -139,7 +154,7 @@ export function LoginScreen({ navigation }: Props) {
             </View>
 
             <Text style={styles.footer}>
-              Fase estática · cualquier usuario y contraseña ingresan
+              Dirección de Seguridad Ciudadana · G.A.M. Cochabamba
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>

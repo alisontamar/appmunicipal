@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing } from '@/theme';
 
-const escudo = require('../../assets/escudo.png');
+const escudo = require('../../assets/escudo.webp');
 
 /**
  * Encabezado propio de las pantallas de pestañas: escudo + título sobre fondo claro

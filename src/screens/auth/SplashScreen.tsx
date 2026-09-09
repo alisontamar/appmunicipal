@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, spacing } from '@/theme';
 import type { AuthStackParamList } from '@/navigation/types';
 
-const escudo = require('../../../assets/escudo.png');
+const escudo = require('../../../assets/escudo.webp');
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Splash'>;
 

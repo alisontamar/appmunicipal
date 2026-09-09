@@ -3,11 +3,11 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { colors, typography } from '@/theme';
 
-const escudo = require('../../assets/escudo.png');
+const escudo = require('../../assets/escudo.webp');
 
 /**
- * Escudo / logo institucional (assets/escudo.png).
- * `onDark` ajusta el color del texto para fondos oscuros (azul institucional).
+ * Escudo / logo institucional (assets/escudo.webp).
+ * `onDark` ajusta el color del texto para fondos oscuros (negro institucional).
  */
 export function Logo({
   size = 96,

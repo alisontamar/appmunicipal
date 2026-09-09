@@ -19,7 +19,10 @@ const navTheme: Theme = {
 };
 
 export function RootNavigator() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, booting } = useAuth();
+  // Mientras se rehidrata la sesion guardada, no montamos ningun navegador
+  // (evita el parpadeo Login -> App cuando el token es valido).
+  if (booting) return null;
   return (
     <NavigationContainer theme={navTheme}>
       {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}

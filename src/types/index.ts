@@ -4,13 +4,26 @@ export type RiskLevel = 'bajo' | 'medio' | 'alto' | 'muy_alto';
 
 export type ShiftStatus = 'fuera_de_servicio' | 'en_servicio' | 'finalizado';
 
+export type GuardiaEstado = 'pendiente_activacion' | 'activo' | 'inactivo' | 'suspendido';
+
+export type EstadoOperativo = 'fuera_de_servicio' | 'en_servicio' | 'emergencia';
+
 export interface Guardia {
   id: string;
   nombre: string;
   usuario: string;
   rol: string;
-  distrito: string; // Distrito / EPI asignado
+  distrito: string; // Distrito / EPI asignado (viene de epiNombre)
   fotoUrl?: string;
+  // Campos que aporta el backend (opcionales para no romper los mocks).
+  ci?: string;
+  telefono?: string;
+  estado?: GuardiaEstado;
+  estadoOperativo?: EstadoOperativo;
+  debeCambiarPassword?: boolean;
+  epiId?: string;
+  epiCodigo?: string;
+  epiNombre?: string;
 }
 
 export interface GeoPoint {
@@ -47,6 +60,18 @@ export interface Mandado {
   creadoEn: string; // ISO
 }
 
+// Verificacion periodica de identidad/ubicacion durante el turno (checkpoint).
+// "perdido" = paso el tiempo de gracia y el guardia no respondio; queda sin
+// fotoUri/ubicacion porque nunca se llego a capturar.
+export interface Checkpoint {
+  id: string;
+  turnoId: string;
+  estado: 'realizado' | 'perdido';
+  fotoUri?: string;
+  ubicacion?: GeoPoint;
+  creadoEn: string; // ISO
+}
+
 export interface Turno {
   id: string;
   guardiaId: string;
@@ -60,4 +85,5 @@ export interface Turno {
   recorrido: GeoPoint[];
   incidentes: Incidente[];
   mandados: Mandado[];
+  checkpoints: Checkpoint[];
 }
