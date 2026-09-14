@@ -6,34 +6,44 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, spacing, typography } from '@/theme';
 import { Button, ScreenContainer, TextField } from '@/components';
 import * as authApi from '@/api/auth';
+import { ApiError } from '@/api/client';
 import type { AuthStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
-type Step = 'solicitar' | 'codigo' | 'listo';
+type Step = 'formulario' | 'listo';
+
+function mensajeError(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof Error) return e.message;
+  return 'No se pudo cambiar la contraseña. Intente nuevamente.';
+}
 
 export function ForgotPasswordScreen({ navigation }: Props) {
-  const [step, setStep] = useState<Step>('solicitar');
-  const [identificador, setIdentificador] = useState('');
-  const [codigo, setCodigo] = useState('');
+  const [step, setStep] = useState<Step>('formulario');
+  const [usuario, setUsuario] = useState('');
+  const [ci, setCi] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [nueva, setNueva] = useState('');
+  const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
-  const solicitar = async () => {
-    setBusy(true);
-    try {
-      await authApi.requestPasswordReset(identificador);
-      setStep('codigo');
-    } finally {
-      setBusy(false);
+  const cambiar = async () => {
+    setError(undefined);
+    if (!usuario.trim() || !ci.trim() || !telefono.trim()) {
+      setError('Complete usuario, CI y teléfono.');
+      return;
     }
-  };
-
-  const confirmar = async () => {
+    if (nueva.length < 8) {
+      setError('La nueva contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
     setBusy(true);
     try {
-      await authApi.confirmPasswordReset(codigo, nueva);
+      await authApi.resetearPassword(usuario.trim(), ci.trim(), telefono.trim(), nueva);
       setStep('listo');
+    } catch (e) {
+      setError(mensajeError(e));
     } finally {
       setBusy(false);
     }
@@ -41,36 +51,37 @@ export function ForgotPasswordScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer scroll>
-      {step === 'solicitar' && (
+      {step === 'formulario' && (
         <>
           <Text style={typography.h2}>Recuperar contraseña</Text>
           <Text style={[typography.caption, styles.p]}>
-            Enviaremos un código de verificación. El canal (correo o SMS) queda pendiente de
-            definición por el cliente (RF-APP-02).
+            Todavía no hay un canal de correo o SMS configurado para enviar códigos. Verifique su
+            identidad con los datos de su registro y defina su nueva contraseña directamente.
           </Text>
           <TextField
-            label="Correo o número registrado"
+            label="Usuario"
             autoCapitalize="none"
-            value={identificador}
-            onChangeText={setIdentificador}
-            placeholder="guardia@cochabamba.bo"
+            autoCorrect={false}
+            value={usuario}
+            onChangeText={setUsuario}
+            placeholder="Ej. jperez"
+            returnKeyType="next"
           />
-          <Button label="Enviar código" icon="mail" large onPress={solicitar} loading={busy} />
-        </>
-      )}
-
-      {step === 'codigo' && (
-        <>
-          <Text style={typography.h2}>Verificación</Text>
-          <Text style={[typography.caption, styles.p]}>
-            Ingrese el código recibido y defina su nueva contraseña.
-          </Text>
           <TextField
-            label="Código de verificación"
+            label="Cédula de identidad"
+            value={ci}
+            onChangeText={setCi}
+            placeholder="Ej. 1234567"
             keyboardType="number-pad"
-            value={codigo}
-            onChangeText={setCodigo}
-            placeholder="6 dígitos"
+            returnKeyType="next"
+          />
+          <TextField
+            label="Teléfono registrado"
+            value={telefono}
+            onChangeText={setTelefono}
+            placeholder="Ej. 70012345"
+            keyboardType="phone-pad"
+            returnKeyType="next"
           />
           <TextField
             label="Nueva contraseña"
@@ -78,8 +89,16 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             value={nueva}
             onChangeText={setNueva}
             placeholder="••••••••"
+            hint="Mínimo 8 caracteres."
+            error={error}
+            returnKeyType="go"
+            onSubmitEditing={cambiar}
           />
-          <Button label="Guardar contraseña" icon="checkmark" large onPress={confirmar} loading={busy} />
+          <Button label="Cambiar contraseña" icon="key" large onPress={cambiar} loading={busy} />
+          <Text style={[typography.caption, styles.nota]}>
+            Si sus datos no coinciden, contacte a la Dirección de Seguridad Ciudadana para
+            restablecer su acceso.
+          </Text>
         </>
       )}
 
@@ -99,6 +118,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   p: { marginVertical: spacing.md },
+  nota: { textAlign: 'center', marginTop: spacing.md },
   done: { alignItems: 'center', gap: spacing.md, paddingTop: spacing.xxl },
   center: { textAlign: 'center' },
 });

@@ -159,6 +159,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const proximoCheckpointRef = useRef<number | null>(null);
   const checkpointVenceRef = useRef<number | null>(null);
   const conectadoAntesRef = useRef<boolean | null>(null);
+  const rehidratadoRef = useRef<string | null>(null);
 
   const refrescarPendientes = useCallback(async () => {
     const items = await listarPendientes();
@@ -268,6 +269,63 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   }, [turno, checkpointPendiente]);
 
   useEffect(() => () => detenerSeguimiento(), [detenerSeguimiento]);
+
+  // Si el proceso de la app murió mientras había un servicio en curso (p. ej. Android
+  // lo mata al salir), al reabrir la app AuthContext rehidrata la sesión pero este
+  // contexto arrancaba con turno=null aunque en el backend el turno seguía
+  // "en_servicio" — dejando al guardia sin poder iniciar ni cerrar nada. Al tener
+  // guardia autenticado, se busca si ya hay un turno abierto y se retoma.
+  useEffect(() => {
+    if (!guardia || rehidratadoRef.current === guardia.id) return;
+    rehidratadoRef.current = guardia.id;
+
+    (async () => {
+      try {
+        const turnos = await turnosApi.listarTurnos();
+        const activo = turnos.find((t) => t.estado === 'en_servicio');
+        if (!activo) return;
+
+        let recorrido = activo.recorrido;
+        let distanciaMetros = activo.distanciaMetros;
+        try {
+          const r = await turnosApi.obtenerRecorrido(activo.id);
+          if (r.puntos.length > 0) recorrido = r.puntos;
+          if (r.distanciaMetros != null) distanciaMetros = r.distanciaMetros;
+        } catch {
+          // se mantiene el recorrido minimo (solo el punto de inicio)
+        }
+
+        let incidentes = activo.incidentes;
+        let mandados = activo.mandados;
+        try {
+          const [todosIncidentes, todosMandados] = await Promise.all([
+            incidentesApi.listarIncidentes(),
+            mandadosApi.listarMandados(),
+          ]);
+          incidentes = todosIncidentes.filter((i) => i.turnoId === activo.id);
+          mandados = todosMandados.filter((m) => m.turnoId === activo.id);
+        } catch {
+          // no es critico para retomar el servicio; quedan vacios
+        }
+
+        const restaurado: Turno = { ...activo, recorrido, distanciaMetros, incidentes, mandados };
+        let aplicado = false;
+        setTurno((prev) => {
+          if (prev) return prev; // ya se inicio un turno nuevo en esta misma sesion
+          aplicado = true;
+          return restaurado;
+        });
+        if (aplicado) {
+          iniciarSeguimiento();
+          proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
+          checkpointVenceRef.current = null;
+          setCheckpointPendiente(false);
+        }
+      } catch (e) {
+        console.warn('[Shift] no se pudo verificar si habia un servicio activo:', e);
+      }
+    })();
+  }, [guardia, iniciarSeguimiento]);
 
   const ultimaUbicacion = useCallback((): Promise<GeoPoint> => obtenerUbicacionActual(), []);
 

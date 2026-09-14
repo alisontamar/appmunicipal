@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { forwardRef, useState } from 'react';
 import {
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TextInputProps,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { colors, radius, spacing, typography } from '@/theme';
 
@@ -17,17 +19,56 @@ interface Props extends TextInputProps {
   onDark?: boolean;
 }
 
-export function TextField({ label, hint, error, onDark = false, style, ...rest }: Props) {
+export const TextField = forwardRef<TextInput, Props>(function TextField(
+  {
+    label,
+    hint,
+    error,
+    onDark = false,
+    style,
+    secureTextEntry,
+    ...rest
+  },
+  ref,
+) {
+  // Si el campo es de contraseña, agregamos el ojo para mostrar/ocultar en
+  // vez de dejarlo siempre oculto.
+  const esPassword = Boolean(secureTextEntry);
+  const [oculto, setOculto] = useState(true);
+
   return (
     <View style={styles.wrap}>
       <Text style={[typography.bodyStrong, styles.label, onDark && styles.labelOnDark]}>
         {label}
       </Text>
-      <TextInput
-        placeholderTextColor={colors.textSecondary}
-        style={[styles.input, error ? styles.inputError : null, style]}
-        {...rest}
-      />
+      <View style={styles.inputWrap}>
+        <TextInput
+          ref={ref}
+          placeholderTextColor={colors.textSecondary}
+          style={[
+            styles.input,
+            esPassword && styles.inputConIcono,
+            error ? styles.inputError : null,
+            style,
+          ]}
+          secureTextEntry={esPassword ? oculto : secureTextEntry}
+          {...rest}
+        />
+        {esPassword && (
+          <Pressable
+            style={styles.iconoOjo}
+            onPress={() => setOculto((v) => !v)}
+            hitSlop={8}
+            accessibilityLabel={oculto ? 'Mostrar contraseña' : 'Ocultar contraseña'}
+          >
+            <Ionicons
+              name={oculto ? 'eye-off' : 'eye'}
+              size={20}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+        )}
+      </View>
       {error ? (
         <Text style={[typography.caption, styles.error]}>{error}</Text>
       ) : hint ? (
@@ -35,13 +76,14 @@ export function TextField({ label, hint, error, onDark = false, style, ...rest }
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: spacing.lg },
   label: { marginBottom: spacing.xs },
   labelOnDark: { color: colors.white },
   hintOnDark: { color: colors.grayLight },
+  inputWrap: { justifyContent: 'center' },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -51,6 +93,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: 16,
     color: colors.textPrimary,
+  },
+  inputConIcono: { paddingRight: 44 },
+  iconoOjo: {
+    position: 'absolute',
+    right: spacing.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   inputError: { borderColor: colors.danger },
   error: { color: colors.danger, marginTop: spacing.xs },

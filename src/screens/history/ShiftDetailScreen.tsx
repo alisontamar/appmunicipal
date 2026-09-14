@@ -120,9 +120,9 @@ export function ShiftDetailScreen({ route }: Props) {
         ))
       )}
 
-      <SectionTitle>{`Mandados (${turno.mandados.length})`}</SectionTitle>
+      <SectionTitle>{`Tareas (${turno.mandados.length})`}</SectionTitle>
       {turno.mandados.length === 0 ? (
-        <EmptyState title="Sin mandados en este turno" />
+        <EmptyState title="Sin tareas en este turno" />
       ) : (
         turno.mandados.map((m) => (
           <ListRow

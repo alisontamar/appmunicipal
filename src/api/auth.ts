@@ -1,4 +1,4 @@
-import { guardarTokens, limpiarTokens, request } from './client';
+import { ApiError, guardarTokens, limpiarTokens, request } from './client';
 import type { Guardia } from '@/types';
 
 export interface LoginResult {
@@ -93,15 +93,42 @@ export async function logout(): Promise<void> {
   await limpiarTokens();
 }
 
-// TODO(backend): todavía no hay endpoint de recuperación de contraseña para
-// guardias en la API móvil. Se dejan como no-op para no romper la pantalla.
-export async function requestPasswordReset(_identificador: string): Promise<{ enviado: boolean }> {
-  return { enviado: true };
-}
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-export async function confirmPasswordReset(
-  _codigo: string,
-  _nuevaPassword: string,
+/**
+ * La API móvil (backend Express) todavía no tiene endpoint de recuperación de
+ * contraseña, y `guardia` no tiene email (solo teléfono) — no hay canal para
+ * mandar un código de verificación. En su lugar, esto llama a la Edge Function
+ * de Supabase `guardia-password-reset`, que verifica identidad con datos que el
+ * guardia ya conoce (usuario + CI + teléfono) y cambia la contraseña en un solo
+ * paso, sin código intermedio.
+ */
+export async function resetearPassword(
+  usuario: string,
+  ci: string,
+  telefono: string,
+  nuevaPassword: string,
 ): Promise<{ ok: boolean }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Función de recuperación no disponible (falta configuración de Supabase).');
+  }
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/guardia-password-reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ usuario, ci, telefono, nuevaPassword }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiError(
+      body?.error?.message ?? 'No se pudo cambiar la contraseña.',
+      body?.error?.code ?? 'HTTP_ERROR',
+      res.status,
+    );
+  }
   return { ok: true };
 }

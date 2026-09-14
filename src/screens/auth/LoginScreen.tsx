@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +46,7 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [mostrarHuella, setMostrarHuella] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
 
   // La huella solo tiene sentido si ya hay un usuario guardado de un login  anterior
   useEffect(() => {
@@ -88,7 +90,7 @@ export function LoginScreen({ navigation }: Props) {
       <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <ScrollView
             contentContainerStyle={styles.scroll}
@@ -113,8 +115,11 @@ export function LoginScreen({ navigation }: Props) {
                 onChangeText={setUsuario}
                 placeholder="Ej. jperez"
                 returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                blurOnSubmit={false}
               />
               <TextField
+                ref={passwordRef}
                 label="Contraseña"
                 onDark
                 secureTextEntry

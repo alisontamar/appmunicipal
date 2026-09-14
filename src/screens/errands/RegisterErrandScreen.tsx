@@ -28,7 +28,7 @@ export function RegisterErrandScreen({ navigation }: Props) {
 
   const enviar = async () => {
     if (descripcion.trim().length < 3) {
-      setError('Describa brevemente el mandado.');
+      setError('Describa brevemente la tarea.');
       return;
     }
     if (!captura) {
@@ -47,7 +47,7 @@ export function RegisterErrandScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer scroll>
-      <Text style={typography.h2}>Registrar mandado</Text>
+      <Text style={typography.h2}>Registrar tarea</Text>
       <Text style={[typography.caption, styles.p]}>
         Comisiones o tareas puntuales asignadas durante el turno (RF-APP-06).
       </Text>
@@ -102,7 +102,7 @@ export function RegisterErrandScreen({ navigation }: Props) {
       )}
 
       <Button
-        label="Guardar mandado"
+        label="Guardar tarea"
         icon="clipboard"
         variant="secondary"
         large

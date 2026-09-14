@@ -6,6 +6,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "guardiasgam",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1C1A19"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -21,11 +27,19 @@
     },
     "android": {
       "package": "bo.gob.cochabamba.guardias",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1C1A19"
+      },
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -48,6 +62,12 @@
           "locationWhenInUsePermission": "Se usa su ubicación para registrar el inicio/cierre de turno, la ruta de patrullaje y la ubicación de incidentes y mandados."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "16926765-c912-4585-a533-9c1fab0182d1"
+      }
+    },
+    "owner": "carmenvic"
   }
 }

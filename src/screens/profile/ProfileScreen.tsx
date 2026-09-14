@@ -53,7 +53,7 @@ export function ProfileScreen() {
         </>
       ) : (
         <Text style={[typography.caption, styles.note]}>
-          Todo sincronizado. Los incidentes, mandados, checkpoints y ubicación se guardan en el
+          Todo sincronizado. Los incidentes, tareas, checkpoints y ubicación se guardan en el
           celular y se envían solos si en algún momento no hay señal (RF-APP-11).
         </Text>
       )}

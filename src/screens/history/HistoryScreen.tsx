@@ -20,7 +20,7 @@ type TabKey = 'turnos' | 'incidentes' | 'mandados';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'turnos', label: 'Turnos' },
   { key: 'incidentes', label: 'Incidentes' },
-  { key: 'mandados', label: 'Mandados' },
+  { key: 'mandados', label: 'Tareas' },
 ];
 
 export function HistoryScreen() {
@@ -73,7 +73,7 @@ export function HistoryScreen() {
                 subtitle={`${formatHora(t.horaInicio)} – ${formatHora(t.horaFin)} · ${formatDistancia(
                   t.distanciaMetros,
                 )}`}
-                meta={`${t.incidentes.length} incidente(s) · ${t.mandados.length} mandado(s)`}
+                meta={`${t.incidentes.length} incidente(s) · ${t.mandados.length} tarea(s)`}
                 onPress={() => navigation.navigate('ShiftDetail', { turnoId: t.id })}
               />
             ))
@@ -98,7 +98,7 @@ export function HistoryScreen() {
 
         {tab === 'mandados' &&
           (mandados.length === 0 ? (
-            <EmptyState title="Sin mandados" />
+            <EmptyState title="Sin tareas" />
           ) : (
             mandados.map((m) => (
               <ListRow

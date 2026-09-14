@@ -20,6 +20,8 @@ export interface OsmMapViewHandle {
   setRecorrido: (puntos: OsmPoint[]) => void;
   /** Reemplaza los marcadores de incidentes. */
   setIncidentes: (marcadores: OsmMarker[]) => void;
+  /** Reemplaza el polígono de la zona/ruta asignada. */
+  setZona: (puntos: OsmPoint[]) => void;
 }
 
 interface Props {
@@ -92,6 +94,11 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
         )}); true;`,
       );
     },
+    setZona: (puntos) => {
+      webRef.current?.injectJavaScript(
+        `window.setZona(${JSON.stringify(puntos.map((p) => [p.latitud, p.longitud]))}); true;`,
+      );
+    },
   }));
 
   return (
@@ -139,14 +146,22 @@ function buildHtml(
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
-    if (${zonaCoords}.length > 0) {
-      L.polygon(${zonaCoords}, {
-        color: '${zonaColor}',
-        fillColor: '${zonaColor}',
-        fillOpacity: 0.15,
-        weight: 2
-      }).addTo(map);
-    }
+    var zonaPoligono = null;
+    window.setZona = function (puntos) {
+      if (zonaPoligono) {
+        map.removeLayer(zonaPoligono);
+        zonaPoligono = null;
+      }
+      if (puntos.length > 0) {
+        zonaPoligono = L.polygon(puntos, {
+          color: '${zonaColor}',
+          fillColor: '${zonaColor}',
+          fillOpacity: 0.15,
+          weight: 2
+        }).addTo(map);
+      }
+    };
+    window.setZona(${zonaCoords});
 
     var miIcono = L.divIcon({
       className: '',
