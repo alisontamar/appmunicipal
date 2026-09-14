@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, typography } from '@/theme';
@@ -107,7 +107,14 @@ export function MapScreen() {
   }, [turno?.incidentes]);
 
   return (
-    <ScreenContainer scroll statusBar="dark" header={<ScreenHeader title="Mapa" />}>
+    <ScreenContainer statusBar="dark" header={<ScreenHeader title="Mapa" />}>
+      {/*
+        El mapa va FUERA del ScrollView a propósito: un WebView con Leaflet
+        dentro de un ScrollView compite por el gesto con el scroll vertical, y
+        el pellizco para hacer zoom queda entrecortado (los botones +/- del
+        mapa sí funcionan porque son un simple tap, no un gesto). Solo el
+        contenido de abajo se desplaza.
+      */}
       {miUbicacion ? (
         <OsmMapView
           ref={mapRef}
@@ -130,55 +137,61 @@ export function MapScreen() {
         </View>
       )}
 
-      <SectionTitle hint="RF-APP-10">Mi ubicación</SectionTitle>
-      <Card>
-        {errorUbicacion ? (
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <SectionTitle hint="RF-APP-10">Mi ubicación</SectionTitle>
+        <Card>
+          {errorUbicacion ? (
+            <View style={styles.row}>
+              <Ionicons name="warning" size={18} color={colors.danger} />
+              <Text style={[typography.body, styles.errorText]}>{errorUbicacion}</Text>
+            </View>
+          ) : (
+            <View style={styles.row}>
+              <Ionicons name="navigate" size={18} color={colors.gold} />
+              <Text style={typography.body}>
+                {miUbicacion
+                  ? formatCoords(miUbicacion.latitud, miUbicacion.longitud)
+                  : 'Obteniendo ubicación GPS…'}
+              </Text>
+            </View>
+          )}
           <View style={styles.row}>
-            <Ionicons name="warning" size={18} color={colors.danger} />
-            <Text style={[typography.body, styles.errorText]}>{errorUbicacion}</Text>
+            <Ionicons name="business" size={18} color={colors.gold} />
+            <Text style={typography.body}>Zona asignada: Distrito 10 · EPI Sur</Text>
           </View>
-        ) : (
-          <View style={styles.row}>
-            <Ionicons name="navigate" size={18} color={colors.gold} />
+        </Card>
+
+        <SectionTitle>Recorrido de la ronda</SectionTitle>
+        {enServicio && turno ? (
+          <Card>
             <Text style={typography.body}>
-              {miUbicacion
-                ? formatCoords(miUbicacion.latitud, miUbicacion.longitud)
-                : 'Obteniendo ubicación GPS…'}
+              {turno.recorrido.length} punto(s) GPS registrados en este turno.
             </Text>
-          </View>
+            <Text style={[typography.caption, styles.note]}>
+              La captura periódica se envía al backend para trazar el recorrido (RF-APP-05).
+            </Text>
+          </Card>
+        ) : (
+          <Card>
+            <Text style={typography.body}>Inicie un servicio para trazar el recorrido.</Text>
+          </Card>
         )}
-        <View style={styles.row}>
-          <Ionicons name="business" size={18} color={colors.gold} />
-          <Text style={typography.body}>Zona asignada: Distrito 10 · EPI Sur</Text>
+
+        <SectionTitle>Leyenda</SectionTitle>
+        <View style={styles.legend}>
+          <Legend color={colors.onDuty} label="Guardia en servicio / recorrido" />
+          <Legend color={colors.gold} label="Ruta / zona asignada" />
+          <Legend color={colors.riskVeryHigh} label="Incidente reportado" />
         </View>
-      </Card>
 
-      <SectionTitle>Recorrido de la ronda</SectionTitle>
-      {enServicio && turno ? (
-        <Card>
-          <Text style={typography.body}>
-            {turno.recorrido.length} punto(s) GPS registrados en este turno.
-          </Text>
-          <Text style={[typography.caption, styles.note]}>
-            La captura periódica se envía al backend para trazar el recorrido (RF-APP-05).
-          </Text>
-        </Card>
-      ) : (
-        <Card>
-          <Text style={typography.body}>Inicie un servicio para trazar el recorrido.</Text>
-        </Card>
-      )}
-
-      <SectionTitle>Leyenda</SectionTitle>
-      <View style={styles.legend}>
-        <Legend color={colors.onDuty} label="Guardia en servicio / recorrido" />
-        <Legend color={colors.gold} label="Ruta / zona asignada" />
-        <Legend color={colors.riskVeryHigh} label="Incidente reportado" />
-      </View>
-
-      <Text style={[typography.caption, styles.attribution]}>
-        Mapa © colaboradores de OpenStreetMap
-      </Text>
+        <Text style={[typography.caption, styles.attribution]}>
+          Mapa © colaboradores de OpenStreetMap
+        </Text>
+      </ScrollView>
     </ScreenContainer>
   );
 }
@@ -193,6 +206,8 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  scroll: { flex: 1, marginTop: spacing.lg },
+  scrollContent: { flexGrow: 1 },
   mapLoading: {
     alignItems: 'center',
     justifyContent: 'center',

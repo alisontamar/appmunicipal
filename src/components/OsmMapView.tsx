@@ -109,6 +109,13 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
         source={{ html }}
         javaScriptEnabled
         domStorageEnabled
+        // Leaflet maneja el pan/zoom por su cuenta con JS; si el WebView deja
+        // habilitado su propio scroll nativo, ese scroll compite con el gesto
+        // de pellizco (pinch) y lo corta a medias. Los botones +/- de Leaflet
+        // son un simple tap, por eso esos sí funcionaban aunque el pellizco no.
+        scrollEnabled={false}
+        bounces={false}
+        overScrollMode="never"
         style={styles.webview}
       />
     </View>
