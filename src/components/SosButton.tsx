@@ -5,10 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '@/theme';
 import { useShift } from '@/context/ShiftContext';
 import { autenticarConBiometria, biometriaDisponible } from '@/utils/biometria';
+import { useTabBarHeight } from '@/navigation/tabBarMetrics';
+
+// Separación entre el borde superior del tab bar y el borde inferior del botón.
+const GAP_SOBRE_TAB_BAR = 20;
 
 export function SosButton() {
   const { enServicio, dispararSos } = useShift();
   const [enviando, setEnviando] = useState(false);
+  const tabBarHeight = useTabBarHeight();
 
   if (!enServicio) return null;
 
@@ -45,7 +50,11 @@ export function SosButton() {
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.boton, pressed && styles.presionado]}
+      style={({ pressed }) => [
+        styles.boton,
+        { bottom: tabBarHeight + GAP_SOBRE_TAB_BAR },
+        pressed && styles.presionado,
+      ]}
       onPress={confirmarYEnviar}
       disabled={enviando}
     >
@@ -65,7 +74,6 @@ const styles = StyleSheet.create({
   boton: {
     position: 'absolute',
     right: 20,
-    bottom: 90,
     backgroundColor: colors.danger,
     width: 64,
     height: 64,
