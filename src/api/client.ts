@@ -7,12 +7,44 @@
  * - Ambos tokens se guardan en AsyncStorage para sobrevivir a reinicios de la app.
  *
  * Para probar desde un celular fisico con Expo Go, `localhost` no sirve: hay que
- * apuntar a la IP LAN de la PC donde corre el backend. Se puede sobreescribir con
- * la variable de entorno EXPO_PUBLIC_API_URL.
+ * apuntar a la IP LAN de la PC donde corre el backend. En vez de hardcodearla,
+ * la deducimos del host que Expo/Metro ya usan para conectarse a este dispositivo
+ * (Constants.expoConfig.hostUri) — así funciona sola al cambiar de red, siempre que
+ * el celular y la PC del backend sigan en la misma red. Se puede forzar otra URL
+ * con EXPO_PUBLIC_API_URL.
+ *
+ * IMPORTANTE: en un build standalone (EAS/APK) `hostUri` no existe (no hay Metro).
+ * En teoria eas.json fija EXPO_PUBLIC_API_URL ahi y deberia bastar, pero se
+ * confirmo con un build real que esa variable a veces NO llega al bundle final
+ * (quedo embebida la IP de LAN vieja en vez de la URL de produccion). Por eso el
+ * fallback para standalone NO es una IP local: es el backend de produccion. Si
+ * cambia la URL del backend, actualizar PROD_API_URL aca Y en eas.json/.env.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-const DEFAULT_BASE_URL = 'http://192.168.100.5:4001/api';
+const API_PORT = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_PORT) || '4001';
+const PROD_API_URL = 'https://gamc-backend.onrender.com/api';
+
+function hostDesdeExpo(): string | null {
+  const hostUri: string | undefined =
+    Constants.expoConfig?.hostUri ??
+    (Constants as any).expoGoConfig?.debuggerHost ??
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as any).manifest?.debuggerHost;
+  return hostUri?.split(':')[0] || null;
+}
+
+function calcularBaseUrlPorDefecto(): string {
+  if (Platform.OS === 'web') return `http://localhost:${API_PORT}/api`;
+  const host = hostDesdeExpo();
+  // Con hostUri (Expo Go / dev client con Metro corriendo): apunta al backend
+  // local en la PC del desarrollador. Sin hostUri (standalone/APK): produccion.
+  return host ? `http://${host}:${API_PORT}/api` : PROD_API_URL;
+}
+
+const DEFAULT_BASE_URL = calcularBaseUrlPorDefecto();
 
 export const API_BASE_URL =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) || DEFAULT_BASE_URL;

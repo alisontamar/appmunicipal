@@ -12,14 +12,31 @@ export class UbicacionDenegadaError extends Error {
 }
 
 let seSolicitoPermiso = false;
+// MapScreen (ubicación + seguimiento) y ShiftContext (seguimiento del turno) pueden
+// pedir permiso casi al mismo tiempo al entrar al mapa durante un servicio activo.
+// Llamar dos veces en paralelo a los métodos nativos de permisos de Android puede
+// hacer que una de las dos llamadas resuelva como "denegado" aunque el permiso ya
+// esté otorgado. Se comparte una única promesa en vuelo para que las llamadas
+// concurrentes esperen el mismo chequeo en vez de disparar varias llamadas nativas.
+let chequeoEnCurso: Promise<boolean> | null = null;
 
 async function asegurarPermiso(): Promise<boolean> {
-  const actual = await Location.getForegroundPermissionsAsync();
-  if (actual.status === Location.PermissionStatus.GRANTED) return true;
-  if (!actual.canAskAgain && seSolicitoPermiso) return false;
-  seSolicitoPermiso = true;
-  const solicitado = await Location.requestForegroundPermissionsAsync();
-  return solicitado.status === Location.PermissionStatus.GRANTED;
+  if (chequeoEnCurso) return chequeoEnCurso;
+
+  chequeoEnCurso = (async () => {
+    const actual = await Location.getForegroundPermissionsAsync();
+    if (actual.status === Location.PermissionStatus.GRANTED) return true;
+    if (!actual.canAskAgain && seSolicitoPermiso) return false;
+    seSolicitoPermiso = true;
+    const solicitado = await Location.requestForegroundPermissionsAsync();
+    return solicitado.status === Location.PermissionStatus.GRANTED;
+  })();
+
+  try {
+    return await chequeoEnCurso;
+  } finally {
+    chequeoEnCurso = null;
+  }
 }
 
 function aGeoPoint(pos: Location.LocationObject): GeoPoint {

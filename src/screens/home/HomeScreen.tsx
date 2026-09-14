@@ -94,7 +94,7 @@ export function HomeScreen() {
             style={styles.action}
           />
           <Button
-            label="Registrar mandado"
+            label="Registrar tarea"
             icon="clipboard"
             variant="secondary"
             large

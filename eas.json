@@ -1,0 +1,45 @@
+{
+  "cli": {
+    "version": ">= 20.1.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

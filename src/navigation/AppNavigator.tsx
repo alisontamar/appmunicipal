@@ -70,12 +70,12 @@ export function AppNavigator() {
         <Stack.Screen
           name="RegisterErrand"
           component={RegisterErrandScreen}
-          options={{ title: 'Registrar mandado' }}
+          options={{ title: 'Registrar tarea' }}
         />
         <Stack.Screen
           name="ErrandSuccess"
           component={ErrandSuccessScreen}
-          options={{ title: 'Mandado registrado', headerBackVisible: false, gestureEnabled: false }}
+          options={{ title: 'Tarea registrada', headerBackVisible: false, gestureEnabled: false }}
         />
         <Stack.Screen
           name="ShiftDetail"

@@ -1,4 +1,5 @@
 import { request } from './client';
+import { subirEvidencia } from '@/utils/storage';
 import type { GeoPoint, IncidentType, Incidente, RiskLevel } from '@/types';
 
 export interface NuevoIncidente {
@@ -48,6 +49,12 @@ function mapIncidente(d: HechoDTO, origen?: NuevoIncidente): Incidente {
 
 /** RF-APP-08 — registrar incidente (robo, asalto, etc.). */
 export async function registrarIncidente(data: NuevoIncidente): Promise<Incidente> {
+  const evidenciaUrls = await Promise.all(
+    data.evidenciaUris.map((uri) => subirEvidencia(uri, 'incidentes')),
+  );
+  // Si el backend no devuelve `evidencias` en la respuesta, mapIncidente hace
+  // fallback a `origen.evidenciaUris` — debe ser la URL ya subida, no la ruta local.
+  const origen: NuevoIncidente = { ...data, evidenciaUris: evidenciaUrls };
   const d = await request<HechoDTO>('/hechos', {
     method: 'POST',
     body: JSON.stringify({
@@ -58,10 +65,10 @@ export async function registrarIncidente(data: NuevoIncidente): Promise<Incident
       lng: data.ubicacion.longitud,
       ocurridoEn: data.ubicacion.timestamp,
       turnoId: data.turnoId || undefined,
-      evidencias: data.evidenciaUris.map((url) => ({ url })),
+      evidencias: evidenciaUrls.map((url) => ({ url })),
     }),
   });
-  return mapIncidente(d, data);
+  return mapIncidente(d, origen);
 }
 
 /** RF-APP-09 — historial de incidentes propios. */

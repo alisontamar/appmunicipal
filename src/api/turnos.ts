@@ -1,4 +1,5 @@
 import { request } from './client';
+import { subirEvidencia } from '@/utils/storage';
 import type { GeoPoint, ShiftStatus, Turno } from '@/types';
 
 /** Forma del turno que devuelve el backend. */
@@ -55,10 +56,11 @@ function mapTurno(d: TurnoDTO): Turno {
 
 /** RF-APP-03 — iniciar servicio: selfie + GPS + hora de inicio. */
 export async function iniciarServicio(fotoUri: string, ubicacion: GeoPoint): Promise<Turno> {
+  const selfieUrl = await subirEvidencia(fotoUri, 'selfies');
   const d = await request<TurnoDTO>('/turnos', {
     method: 'POST',
     body: JSON.stringify({
-      selfieInicioUrl: fotoUri,
+      selfieInicioUrl: selfieUrl,
       lat: ubicacion.latitud,
       lng: ubicacion.longitud,
       horaInicio: ubicacion.timestamp,

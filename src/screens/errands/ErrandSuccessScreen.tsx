@@ -13,7 +13,7 @@ export function ErrandSuccessScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <Ionicons name="checkmark-circle" size={96} color={colors.onDuty} />
-      <Text style={[typography.h2, styles.center]}>Mandado registrado</Text>
+      <Text style={[typography.h2, styles.center]}>Tarea registrada</Text>
       <Text style={[typography.caption, styles.center]}>
         Quedó guardado en el turno con su hora y ubicación.
       </Text>
@@ -25,7 +25,7 @@ export function ErrandSuccessScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('Tabs', { screen: 'HomeTab' })}
         />
         <Button
-          label="Registrar otro mandado"
+          label="Registrar otra tarea"
           variant="outline"
           onPress={() => navigation.replace('RegisterErrand')}
         />

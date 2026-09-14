@@ -12,15 +12,13 @@ import {
   type OsmMapViewHandle,
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
-import { patrullaVigente, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
+import { patrullaVigente, zonaDePatrulla, type ZonaPunto } from '@/api/patrullas';
 import { mockZonaAsignada } from '@/mocks';
 import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
 
-// Coordenadas de referencia: plaza 14 de Septiembre, Cochabamba.
-const BASE_LAT = -17.3935;
-const BASE_LNG = -66.157;
+const MAP_HEIGHT = 460;
 
 export function MapScreen() {
   const { turno, enServicio } = useShift();
@@ -29,14 +27,15 @@ export function MapScreen() {
   const [zona, setZona] = useState<ZonaPunto[]>(mockZonaAsignada);
   const mapRef = useRef<OsmMapViewHandle>(null);
 
-  // Ruta / zona asignada del dia (v_patrulla_vigente). Si hoy no hay patrulla o
-  // la ruta no tiene trazado, se deja el poligono de referencia.
+  // Ruta / zona asignada del dia (v_patrulla_vigente). Prioriza el poligono real
+  // de la patrulla asignada (lo que llena el asistente de la web); si hoy no hay
+  // patrulla o no tiene poligono ni trazado, se deja el poligono de referencia.
   useEffect(() => {
     let vigente = true;
     patrullaVigente()
       .then((p) => {
         if (!vigente) return;
-        const puntos = trazadoAZona(p?.trazado ?? null);
+        const puntos = zonaDePatrulla(p);
         if (puntos.length > 0) setZona(puntos);
       })
       .catch(() => {
@@ -46,6 +45,16 @@ export function MapScreen() {
       vigente = false;
     };
   }, []);
+
+  // Empuja el polígono de zona al mapa cada vez que cambia. Es necesario además
+  // de pasarlo como prop: el HTML del mapa se arma una sola vez al montar
+  // (OsmMapView), así que si la respuesta de /patrullas/vigente llega después
+  // de que el mapa ya se montó con el punto GPS (el backend puede tardar más
+  // que el GPS en responder), el polígono solo se actualiza si se empuja por
+  // esta vía imperativa.
+  useEffect(() => {
+    mapRef.current?.setZona(zona);
+  }, [zona]);
 
   // Sigue la ubicación en vivo mientras la pantalla está montada (RF-APP-10).
   useEffect(() => {
@@ -99,14 +108,27 @@ export function MapScreen() {
 
   return (
     <ScreenContainer scroll statusBar="dark" header={<ScreenHeader title="Mapa" />}>
-      <OsmMapView
-        ref={mapRef}
-        centroInicial={{ latitud: BASE_LAT, longitud: BASE_LNG }}
-        zona={zona}
-        zonaColor={colors.gold}
-        recorridoColor={colors.onDuty}
-        height={280}
-      />
+      {miUbicacion ? (
+        <OsmMapView
+          ref={mapRef}
+          centroInicial={{ latitud: miUbicacion.latitud, longitud: miUbicacion.longitud }}
+          zona={zona}
+          zonaColor={colors.gold}
+          recorridoColor={colors.onDuty}
+          height={MAP_HEIGHT}
+        />
+      ) : (
+        <View style={[styles.mapLoading, { height: MAP_HEIGHT }]}>
+          <Ionicons
+            name={errorUbicacion ? 'warning' : 'navigate'}
+            size={28}
+            color={errorUbicacion ? colors.danger : colors.gold}
+          />
+          <Text style={typography.body}>
+            {errorUbicacion ?? 'Obteniendo su ubicación…'}
+          </Text>
+        </View>
+      )}
 
       <SectionTitle hint="RF-APP-10">Mi ubicación</SectionTitle>
       <Card>
@@ -171,6 +193,13 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  mapLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   errorText: { flex: 1, color: colors.danger },
   note: { marginTop: spacing.xs },

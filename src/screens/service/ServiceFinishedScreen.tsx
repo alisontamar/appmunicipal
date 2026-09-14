@@ -34,7 +34,7 @@ export function ServiceFinishedScreen({ navigation }: Props) {
           <Line label="Duración" value={formatDuracion(turno.horaInicio, turno.horaFin)} />
           <Line label="Distancia" value={formatDistancia(turno.distanciaMetros)} />
           <Line label="Incidentes" value={String(turno.incidentes.length)} />
-          <Line label="Mandados" value={String(turno.mandados.length)} />
+          <Line label="Tareas" value={String(turno.mandados.length)} />
           <Line label="Cierre" value={formatHora(turno.horaFin)} last />
         </Card>
       )}

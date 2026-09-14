@@ -60,7 +60,7 @@ export function CloseServiceSummaryScreen({ navigation }: Props) {
           value={String(turno.incidentes.length)}
           label="Incidentes"
         />
-        <StatTile icon="clipboard" value={String(turno.mandados.length)} label="Mandados" />
+        <StatTile icon="clipboard" value={String(turno.mandados.length)} label="Tareas" />
       </View>
 
       <SectionTitle>Cierre</SectionTitle>
