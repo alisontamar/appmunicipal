@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, typography } from '@/theme';
@@ -12,49 +12,178 @@ import {
   type OsmMapViewHandle,
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
-import { patrullaVigente, zonaDePatrulla, type ZonaPunto } from '@/api/patrullas';
+import { patrullaVigente, zonaDePatrulla, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
 import { mockZonaAsignada } from '@/mocks';
 import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
 
-const MAP_HEIGHT = 460;
+const MAP_HEIGHT = 280;
 
 export function MapScreen() {
-  const { turno, enServicio } = useShift();
+  const { turno, enServicio, sincronizarAhora } = useShift();
   const [miUbicacion, setMiUbicacion] = useState<GeoPoint | null>(null);
   const [errorUbicacion, setErrorUbicacion] = useState<string | null>(null);
-  const [zona, setZona] = useState<ZonaPunto[]>(mockZonaAsignada);
+  const [zona, setZona] = useState<ZonaPunto[]>([]);
+  const [trazadoCalles, setTrazadoCalles] = useState<ZonaPunto[]>([]);
+  const [patrullaInfo, setPatrullaInfo] = useState<{ nombre: string | null; rutaNombre: string | null; id: string | null } | null>(null);
+  const [cargandoZona, setCargandoZona] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [calles, setCalles] = useState<string[]>([]);
+  const [cargandoCalles, setCargandoCalles] = useState(false);
   const mapRef = useRef<OsmMapViewHandle>(null);
+  const zonaIdRef = useRef<string | null>(null);
+  const primerCargaRef = useRef(true);
 
-  // Ruta / zona asignada del dia (v_patrulla_vigente). Prioriza el poligono real
-  // de la patrulla asignada (lo que llena el asistente de la web); si hoy no hay
-  // patrulla o no tiene poligono ni trazado, se deja el poligono de referencia.
-  useEffect(() => {
-    let vigente = true;
-    patrullaVigente()
-      .then((p) => {
-        if (!vigente) return;
-        const puntos = zonaDePatrulla(p);
-        if (puntos.length > 0) setZona(puntos);
-      })
-      .catch(() => {
-        /* sin patrulla / sin conexion: se mantiene la zona de referencia */
-      });
-    return () => {
-      vigente = false;
-    };
+  const cargarZona = useCallback(async (mostrarAviso = false) => {
+    try {
+      const p = await patrullaVigente();
+      const puntos = zonaDePatrulla(p);
+      const trazado = trazadoAZona(p?.trazado ?? null);
+      // Para el mapa: el polígono (zona) ; para calles: priorizar el trazado real si existe
+      const puntosCalles = trazado.length >= 2 ? trazado : puntos;
+      if (puntos.length > 0) {
+        const nuevoId = p?.id ?? JSON.stringify(puntos.slice(0, 2));
+        const esNuevaRuta = zonaIdRef.current && zonaIdRef.current !== nuevoId && !primerCargaRef.current;
+        setZona(puntos);
+        setTrazadoCalles(puntosCalles);
+        if (p) setPatrullaInfo({ nombre: p.nombre ?? p.rutaNombre ?? null, rutaNombre: p.rutaNombre, id: p.id });
+        zonaIdRef.current = nuevoId;
+        if (esNuevaRuta && mostrarAviso) {
+          Alert.alert('¡Nueva ruta asignada!', `${p?.rutaNombre || p?.nombre || 'Te asignaron una ruta'} — ya la ves en el mapa en azul. Toca el polígono para detalles.`);
+        }
+        primerCargaRef.current = false;
+        return;
+      }
+      // Sin ruta asignada hoy: mantener vacío (no mostrar cuadrado default hasta confirmar)
+      if (primerCargaRef.current) {
+        // Solo en primera carga sin ruta, mostrar mock sutil para no dejar mapa vacío
+        // pero marcado como referencia
+        setZona(mockZonaAsignada);
+      }
+      primerCargaRef.current = false;
+    } catch {
+      if (primerCargaRef.current) setZona(mockZonaAsignada);
+      primerCargaRef.current = false;
+    } finally {
+      setCargandoZona(false);
+    }
   }, []);
 
-  // Empuja el polígono de zona al mapa cada vez que cambia. Es necesario además
-  // de pasarlo como prop: el HTML del mapa se arma una sola vez al montar
-  // (OsmMapView), así que si la respuesta de /patrullas/vigente llega después
-  // de que el mapa ya se montó con el punto GPS (el backend puede tardar más
-  // que el GPS en responder), el polígono solo se actualiza si se empuja por
-  // esta vía imperativa.
+  // Carga inicial + polling cada 20s + al volver al foreground (cuando el admin asigna ruta en web)
   useEffect(() => {
-    mapRef.current?.setZona(zona);
+    cargarZona(false);
+    const id = setInterval(() => cargarZona(true), 20_000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') cargarZona(true);
+    });
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, [cargarZona]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([cargarZona(true), sincronizarAhora()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [cargarZona, sincronizarAhora]);
+
+  // Empuja el polígono de zona al mapa cada vez que cambia y centra el mapa en la ruta.
+  // Reintenta si el WebView aún no cargó (window.setZona aún no existe) — antes se perdía
+  // el primer setZona y quedaba el cuadrado default hasta salir/volver.
+  useEffect(() => {
+    if (zona.length === 0) return;
+    const aplicar = () => {
+      mapRef.current?.setZona(zona);
+      if (zona.length > 2) mapRef.current?.centrarEnZona?.(zona);
+    };
+    aplicar();
+    // Reintentos por si el WebView aún no está listo (carga asíncrona de Leaflet)
+    const t1 = setTimeout(aplicar, 400);
+    const t2 = setTimeout(aplicar, 1200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [zona]);
+
+  // Calles de la ruta asignada — prioriza trazado real, fetcheo en paralelo para que sea instantáneo
+  useEffect(() => {
+    const fuenteCalles = trazadoCalles.length >= 2 ? trazadoCalles : zona;
+    if (fuenteCalles.length === 0) {
+      setCalles([]);
+      return;
+    }
+    let cancelado = false;
+    setCargandoCalles(true);
+    // Mostrar el nombre de la ruta de inmediato mientras llegan las calles (no esperar 2-3s en blanco)
+    const fallbackInmediato = patrullaInfo?.rutaNombre || patrullaInfo?.nombre;
+    if (fallbackInmediato) setCalles([fallbackInmediato]);
+
+    (async () => {
+      const puntos = fuenteCalles.slice(0, 4);
+      try {
+        const resultados = await Promise.all(
+          puntos.map(async (p) => {
+            try {
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.latitud}&lon=${p.longitud}&zoom=17&addressdetails=1`,
+                { headers: { 'Accept-Language': 'es', 'User-Agent': 'GAMC-Guardias/0.1.0' } },
+              );
+              if (!res.ok) return null;
+              const data: any = await res.json();
+              const addr = data?.address;
+              return (
+                addr?.road ||
+                addr?.pedestrian ||
+                addr?.footway ||
+                addr?.path ||
+                addr?.neighbourhood ||
+                addr?.suburb ||
+                addr?.quarter ||
+                data?.display_name?.split(',')[0] ||
+                null
+              );
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (cancelado) return;
+        const nombres: string[] = [];
+        for (const c of resultados) {
+          if (c && !nombres.includes(c.trim())) nombres.push(c.trim());
+        }
+        if (nombres.length === 0) {
+          // Si todo falló pero ya mostramos el fallback, mantenerlo
+          if (!fallbackInmediato) {
+            const fb = patrullaInfo?.rutaNombre || patrullaInfo?.nombre || 'Ruta asignada';
+            nombres.push(fb);
+          } else if (fallbackInmediato && !nombres.includes(fallbackInmediato)) {
+            // Ya está mostrado, no duplicar
+          }
+        } else if (fallbackInmediato && nombres[0] !== fallbackInmediato && !nombres.includes(fallbackInmediato)) {
+          // Mantener el nombre de la ruta primero si no vino en el reverse
+          nombres.unshift(fallbackInmediato);
+        }
+        // Limitar a 4 para que sea instantáneo
+        const recorte = nombres.slice(0, 4);
+        setCalles(recorte);
+        try {
+          mapRef.current?.setZonaCalles(recorte, patrullaInfo?.rutaNombre || patrullaInfo?.nombre || undefined);
+        } catch {}
+      } finally {
+        if (!cancelado) setCargandoCalles(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [zona, trazadoCalles, patrullaInfo?.rutaNombre, patrullaInfo?.nombre]);
 
   // Sigue la ubicación en vivo mientras la pantalla está montada (RF-APP-10).
   useEffect(() => {
@@ -116,24 +245,71 @@ export function MapScreen() {
         contenido de abajo se desplaza.
       */}
       {miUbicacion ? (
-        <OsmMapView
-          ref={mapRef}
-          centroInicial={{ latitud: miUbicacion.latitud, longitud: miUbicacion.longitud }}
-          zona={zona}
-          zonaColor={colors.gold}
-          recorridoColor={colors.onDuty}
-          height={MAP_HEIGHT}
-        />
+        <View>
+          <OsmMapView
+            ref={mapRef}
+            centroInicial={{ latitud: miUbicacion.latitud, longitud: miUbicacion.longitud }}
+            zona={zona}
+            zonaColor="#2563EB"
+            recorridoColor="#16A34A"
+            height={MAP_HEIGHT}
+          />
+          <View style={styles.mapControls}>
+            <PressableButton onPress={() => mapRef.current?.centrarEnZona(zona)} label="Ver mi ruta" icon="locate" />
+            <PressableButton onPress={() => mapRef.current?.centrarEnMiUbicacion()} label="Mi ubicación" icon="navigate" />
+          </View>
+        </View>
       ) : (
         <View style={[styles.mapLoading, { height: MAP_HEIGHT }]}>
           <Ionicons
             name={errorUbicacion ? 'warning' : 'navigate'}
             size={28}
-            color={errorUbicacion ? colors.danger : colors.gold}
+            color={errorUbicacion ? colors.danger : '#2563EB'}
           />
           <Text style={typography.body}>
             {errorUbicacion ?? 'Obteniendo su ubicación…'}
           </Text>
+        </View>
+        )}
+
+      {/* Calles de mi ruta — siempre visible justo debajo del mapa, como en la web al clickear cada guardia */}
+      {(trazadoCalles.length > 0 || zona.length > 0 || patrullaInfo) && (
+        <View style={styles.callesBelowMap}>
+          <View style={styles.callesHeader}>
+            <Ionicons name="map" size={14} color="#2563EB" />
+            <Text style={styles.callesTitle}>Calles de mi ruta asignada</Text>
+            {patrullaInfo?.rutaNombre && <Text style={styles.callesSubtitle} numberOfLines={1}> — {patrullaInfo.rutaNombre}</Text>}
+          </View>
+          <Card style={styles.callesCard}>
+            {cargandoZona || cargandoCalles ? (
+              <View style={styles.row}>
+                <Ionicons name="hourglass" size={14} color={colors.textSecondary} />
+                <Text style={[typography.caption, { flex: 1, color: colors.textSecondary }]}>Obteniendo calles de tu ruta…</Text>
+              </View>
+            ) : calles.length > 0 ? (
+              <View style={{ gap: 6 }}>
+                {calles.slice(0, 3).map((c, idx) => (
+                  <View key={`${c}-${idx}`} style={styles.calleRow}>
+                    <View style={styles.calleBullet} />
+                    <Text style={[typography.body, { flex: 1, fontSize: 13 }]} numberOfLines={1}>{c}</Text>
+                  </View>
+                ))}
+                <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 2, fontSize: 11 }]}>
+                  {trazadoCalles.length >= 2 ? 'Basado en tu trazado real (ruta)' : 'Basado en el polígono asignado'} · Toca el azul para ver el área
+                </Text>
+              </View>
+            ) : zona.length === 0 ? (
+              <View style={styles.row}>
+                <Ionicons name="information-circle" size={14} color={colors.textSecondary} />
+                <Text style={[typography.caption, { flex: 1, color: colors.textSecondary, fontSize: 12 }]}>Sin zona asignada hoy. El admin te asigna la ruta desde la web.</Text>
+              </View>
+            ) : (
+              <View style={styles.row}>
+                <Ionicons name="information-circle" size={14} color={colors.textSecondary} />
+                <Text style={[typography.caption, { flex: 1, color: colors.textSecondary, fontSize: 12 }]}>Ruta asignada — verás el contorno azul en el mapa ({zona.length} pts).</Text>
+              </View>
+            )}
+          </Card>
         </View>
       )}
 
@@ -141,8 +317,9 @@ export function MapScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.navy900]} tintColor={colors.navy900} />}
       >
-        <SectionTitle hint="RF-APP-10">Mi ubicación</SectionTitle>
+        <SectionTitle hint="RF-APP-10">Mi ubicación y ruta</SectionTitle>
         <Card>
           {errorUbicacion ? (
             <View style={styles.row}>
@@ -151,17 +328,24 @@ export function MapScreen() {
             </View>
           ) : (
             <View style={styles.row}>
-              <Ionicons name="navigate" size={18} color={colors.gold} />
-              <Text style={typography.body}>
+              <Ionicons name="navigate" size={18} color="#16A34A" />
+              <Text style={[typography.body, { flex: 1 }]} numberOfLines={2}>
                 {miUbicacion
                   ? formatCoords(miUbicacion.latitud, miUbicacion.longitud)
                   : 'Obteniendo ubicación GPS…'}
               </Text>
             </View>
           )}
-          <View style={styles.row}>
-            <Ionicons name="business" size={18} color={colors.gold} />
-            <Text style={typography.body}>Zona asignada: Distrito 10 · EPI Sur</Text>
+          <View style={[styles.row, { alignItems: 'flex-start' }]}>
+            <Ionicons name="business" size={18} color="#2563EB" style={{ marginTop: 2 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.body, { fontWeight: '700' }]} numberOfLines={2}>
+                {patrullaInfo?.rutaNombre || patrullaInfo?.nombre || (cargandoZona ? 'Cargando zona asignada…' : zona.length > 2 ? 'Zona asignada disponible en el mapa' : 'Sin zona asignada hoy')}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                {zona.length > 2 ? `${zona.length} puntos • Zona interactiva (toca el polígono azul)` : 'Se asigna desde la web en Módulo de Mapas'}
+              </Text>
+            </View>
           </View>
         </Card>
 
@@ -183,8 +367,8 @@ export function MapScreen() {
 
         <SectionTitle>Leyenda</SectionTitle>
         <View style={styles.legend}>
-          <Legend color={colors.onDuty} label="Guardia en servicio / recorrido" />
-          <Legend color={colors.gold} label="Ruta / zona asignada" />
+          <Legend color="#16A34A" label="Tu recorrido (verde)" />
+          <Legend color="#2563EB" label="Ruta / zona asignada (azul, interactiva)" />
           <Legend color={colors.riskVeryHigh} label="Incidente reportado" />
         </View>
 
@@ -193,6 +377,15 @@ export function MapScreen() {
         </Text>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function PressableButton({ onPress, label, icon }: { onPress: () => void; label: string; icon: any }) {
+  return (
+    <Pressable onPress={onPress} style={styles.mapBtn}>
+      <Ionicons name={icon} size={14} color="#2563EB" />
+      <Text style={styles.mapBtnText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -215,7 +408,45 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 16,
   },
+  mapControls: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    justifyContent: 'center',
+  },
+  mapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    elevation: 2,
+  },
+  mapBtnText: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
+  zonaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1E40AF',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: spacing.sm,
+    alignSelf: 'center',
+  },
+  zonaBadgeText: { fontSize: 11, color: colors.white, fontWeight: '600' },
+  callesBelowMap: { marginTop: 10, gap: 6 },
+  callesHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4 },
+  callesTitle: { fontSize: 11, fontWeight: '800', color: colors.navy900, fontFamily: 'monospace', letterSpacing: 0.7 },
+  callesSubtitle: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', flex: 1 },
+  callesCard: { paddingVertical: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  calleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.background },
+  calleBullet: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2563EB' },
   errorText: { flex: 1, color: colors.danger },
   note: { marginTop: spacing.xs },
   legend: { gap: spacing.sm },

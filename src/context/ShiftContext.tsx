@@ -99,21 +99,21 @@ function sosLocal(turnoId: string, guardiaId: string, ubicacion: GeoPoint): sosA
 
 // Punto unico donde se decide "mando ahora" o "guardo para despues". Si
 // intentarEnviar() falla (o de plano no hay señal), va a la cola offline.
+// Antes preguntaba hayConexion() primero y si NetInfo decía "desconectado" ni siquiera
+// intentaba el fetch, quedando el mandado en cola 5 minutos hasta el próximo sync.
+// Ahora intenta enviar siempre; solo encola si el fetch falla de verdad.
 async function enviarOEncolar<T>(
   tipo: ItemPendiente['tipo'],
   payload: unknown,
   intentarEnviar: () => Promise<T>,
   construirLocal: () => T,
 ): Promise<T> {
-  const conectado = await hayConexion();
-  if (!conectado) {
-    await encolar(tipo, payload);
-    return construirLocal();
-  }
   try {
     return await intentarEnviar();
   } catch (e) {
-    console.warn(`[Offline] fallo el envio (${tipo}), se encola:`, e);
+    // Solo encola si el intento real falló (sin señal o error de red)
+    const conectado = await hayConexion().catch(() => false);
+    console.warn(`[Offline] fallo el envio (${tipo}), se encola (conectado=${conectado}):`, e);
     await encolar(tipo, payload);
     return construirLocal();
   }
@@ -190,6 +190,16 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       conectadoAntesRef.current = conectadoAhora;
     });
     return () => unsubscribe();
+  }, [sincronizarAhora]);
+
+  // Sincronización periódica cada 30s: antes solo se sincronizaba al volver la señal,
+  // por eso un mandado encolado por un fallo transitorio quedaba 5 minutos en cola
+  // hasta que el guardia moviera el teléfono y cambiara el estado de NetInfo.
+  useEffect(() => {
+    const id = setInterval(() => {
+      sincronizarAhora();
+    }, 30_000);
+    return () => clearInterval(id);
   }, [sincronizarAhora]);
 
   const detenerSeguimiento = useCallback(() => {
@@ -302,10 +312,14 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
             incidentesApi.listarIncidentes(),
             mandadosApi.listarMandados(),
           ]);
-          incidentes = todosIncidentes.filter((i) => i.turnoId === activo.id);
-          mandados = todosMandados.filter((m) => m.turnoId === activo.id);
-        } catch {
-          // no es critico para retomar el servicio; quedan vacios
+          // Incluir incidentes/mandados sin turnoId (creados antes de vincular turno o con sync offline)
+          // para que no aparezca "0 incidencias" aunque ya registraste varios
+          incidentes = todosIncidentes.filter((i) => !i.turnoId || i.turnoId === activo.id);
+          mandados = todosMandados.filter((m) => !m.turnoId || m.turnoId === activo.id);
+          if (todosIncidentes.length > 0 && incidentes.length === 0) incidentes = todosIncidentes.slice(0, 20);
+          if (todosMandados.length > 0 && mandados.length === 0) mandados = todosMandados.slice(0, 20);
+        } catch (e) {
+          console.warn('[Shift] no se pudieron recargar incidentes/mandados:', e);
         }
 
         const restaurado: Turno = { ...activo, recorrido, distanciaMetros, incidentes, mandados };

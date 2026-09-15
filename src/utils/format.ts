@@ -20,14 +20,15 @@ export function formatFechaHora(iso?: string): string {
   return `${formatFecha(iso)} · ${formatHora(iso)}`;
 }
 
-/** Duracion legible entre dos ISO (o desde inicio hasta ahora). */
+/** Duracion legible entre dos ISO (o desde inicio hasta ahora) — con segundos en vivo. */
 export function formatDuracion(inicioIso?: string, finIso?: string): string {
-  if (!inicioIso) return '00:00';
+  if (!inicioIso) return '00:00:00';
   const fin = finIso ? new Date(finIso).getTime() : Date.now();
-  const totalMin = Math.max(0, Math.floor((fin - new Date(inicioIso).getTime()) / 60_000));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const totalSeg = Math.max(0, Math.floor((fin - new Date(inicioIso).getTime()) / 1000));
+  const h = Math.floor(totalSeg / 3600);
+  const m = Math.floor((totalSeg % 3600) / 60);
+  const s = totalSeg % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export function formatDistancia(metros: number): string {

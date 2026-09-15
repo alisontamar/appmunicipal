@@ -22,6 +22,12 @@ export interface OsmMapViewHandle {
   setIncidentes: (marcadores: OsmMarker[]) => void;
   /** Reemplaza el polígono de la zona/ruta asignada. */
   setZona: (puntos: OsmPoint[]) => void;
+  /** Actualiza el popup de la zona con las calles */
+  setZonaCalles: (calles: string[], nombreRuta?: string) => void;
+  /** Centra el mapa en la zona/ruta con fitBounds. */
+  centrarEnZona: (puntos: OsmPoint[]) => void;
+  /** Centra el mapa en mi ubicación actual. */
+  centrarEnMiUbicacion: () => void;
 }
 
 interface Props {
@@ -51,14 +57,18 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
   {
     centroInicial,
     zona = [],
-    zonaColor = '#C0906C',
-    recorridoColor = '#2E7D32',
+    zonaColor = '#2563EB',
+    recorridoColor = '#16A34A',
     recorridoInicial = [],
     height = 280,
   },
   ref,
 ) {
   const webRef = useRef<WebView>(null);
+  const pendingZonaRef = useRef<OsmPoint[] | null>(zona.length > 0 ? zona : null);
+  const pendingUbicacionRef = useRef<OsmPoint | null>(null);
+  const pendingIncidentesRef = useRef<OsmMarker[] | null>(null);
+  const mapReadyRef = useRef(false);
 
   const html = useMemo(
     () => buildHtml(centroInicial, zona, zonaColor, recorridoColor, recorridoInicial),
@@ -70,6 +80,10 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
 
   useImperativeHandle(ref, () => ({
     setMiUbicacion: (punto) => {
+      if (!mapReadyRef.current) {
+        pendingUbicacionRef.current = punto;
+        return;
+      }
       webRef.current?.injectJavaScript(
         `window.setMiUbicacion(${punto.latitud}, ${punto.longitud}); true;`,
       );
@@ -82,6 +96,10 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
       );
     },
     setIncidentes: (marcadores) => {
+      if (!mapReadyRef.current) {
+        pendingIncidentesRef.current = marcadores;
+        return;
+      }
       webRef.current?.injectJavaScript(
         `window.setIncidentes(${JSON.stringify(
           marcadores.map((m) => ({
@@ -95,9 +113,29 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
       );
     },
     setZona: (puntos) => {
+      if (!mapReadyRef.current) {
+        pendingZonaRef.current = puntos;
+        return;
+      }
       webRef.current?.injectJavaScript(
         `window.setZona(${JSON.stringify(puntos.map((p) => [p.latitud, p.longitud]))}); true;`,
       );
+    },
+    setZonaCalles: (calles, nombreRuta) => {
+      const safe = JSON.stringify({ calles, nombreRuta });
+      webRef.current?.injectJavaScript(`window.setZonaCalles(${safe}); true;`);
+    },
+    centrarEnZona: (puntos) => {
+      if (!mapReadyRef.current) {
+        pendingZonaRef.current = puntos;
+        return;
+      }
+      webRef.current?.injectJavaScript(
+        `window.centrarEnZona(${JSON.stringify(puntos.map((p) => [p.latitud, p.longitud]))}); true;`,
+      );
+    },
+    centrarEnMiUbicacion: () => {
+      webRef.current?.injectJavaScript(`window.centrarEnMiUbicacion(); true;`);
     },
   }));
 
@@ -109,6 +147,34 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
         source={{ html }}
         javaScriptEnabled
         domStorageEnabled
+        onLoadEnd={() => {
+          mapReadyRef.current = true;
+          if (pendingZonaRef.current && pendingZonaRef.current.length > 0) {
+            const p = pendingZonaRef.current;
+            pendingZonaRef.current = null;
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(`window.setZona(${JSON.stringify(p.map((pt) => [pt.latitud, pt.longitud]))}); true;`);
+            }, 200);
+          }
+          if (pendingUbicacionRef.current) {
+            const u = pendingUbicacionRef.current;
+            pendingUbicacionRef.current = null;
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(`window.setMiUbicacion(${u.latitud}, ${u.longitud}); true;`);
+            }, 300);
+          }
+          if (pendingIncidentesRef.current && pendingIncidentesRef.current.length > 0) {
+            const m = pendingIncidentesRef.current;
+            pendingIncidentesRef.current = null;
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(
+                `window.setIncidentes(${JSON.stringify(
+                  m.map((mk) => ({ id: mk.id, lat: mk.latitud, lng: mk.longitud, color: mk.color ?? '#E53935', title: mk.title ?? '' })),
+                )}); true;`,
+              );
+            }, 350);
+          }
+        }}
         // Leaflet maneja el pan/zoom por su cuenta con JS; si el WebView deja
         // habilitado su propio scroll nativo, ese scroll compite con el gesto
         // de pellizco (pinch) y lo corta a medias. Los botones +/- de Leaflet
@@ -154,6 +220,39 @@ function buildHtml(
     }).addTo(map);
 
     var zonaPoligono = null;
+    var miUbicacionActual = null;
+    var primerAjusteHecho = false;
+    var zonaCallesData = [];
+    var zonaNombreData = '';
+    function ajustarVistaConAmbos() {
+      try {
+        if (zonaPoligono && miMarcador) {
+          var grupo = L.featureGroup([zonaPoligono, miMarcador]);
+          map.fitBounds(grupo.getBounds(), { padding: [32, 32], maxZoom: 16 });
+        } else if (zonaPoligono) {
+          map.fitBounds(zonaPoligono.getBounds(), { padding: [28, 28], maxZoom: 17 });
+        } else if (miMarcador && miUbicacionActual) {
+          map.setView(miUbicacionActual, 15);
+        }
+      } catch(e){}
+    }
+    function popupZonaHtml(){
+      var titulo = zonaNombreData ? '▣ ' + zonaNombreData : '▣ Zona / Ruta asignada';
+      var html = '<b style="color:${zonaColor}">' + titulo + '</b><br>';
+      if (zonaCallesData.length>0) {
+        html += '<span style="font-size:11px;color:#334155">' + zonaCallesData.slice(0,3).join(' · ') + '</span><br>';
+        if (zonaCallesData.length>3) html += '<span style="font-size:10px;color:#64748B">+' + (zonaCallesData.length-3) + ' calles más abajo</span><br>';
+      } else {
+        html += '<span style="font-size:11px">Toca Ver mi ruta para centrar</span><br>';
+      }
+      html += '<span style="font-size:10px;color:#2563EB">▲ Toca fuera para cerrar</span>';
+      return html;
+    }
+    window.setZonaCalles = function(data){
+      zonaCallesData = (data && data.calles) ? data.calles : [];
+      zonaNombreData = (data && data.nombreRuta) ? data.nombreRuta : '';
+      if (zonaPoligono) zonaPoligono.setPopupContent(popupZonaHtml());
+    };
     window.setZona = function (puntos) {
       if (zonaPoligono) {
         map.removeLayer(zonaPoligono);
@@ -163,12 +262,37 @@ function buildHtml(
         zonaPoligono = L.polygon(puntos, {
           color: '${zonaColor}',
           fillColor: '${zonaColor}',
-          fillOpacity: 0.15,
-          weight: 2
+          fillOpacity: 0.18,
+          weight: 3,
+          dashArray: '8, 6',
+          lineCap: 'round',
+          interactive: true
         }).addTo(map);
+        zonaPoligono.bindPopup(popupZonaHtml());
+        zonaPoligono.on('click', function(e){ L.DomEvent.stopPropagation(e); zonaPoligono.setPopupContent(popupZonaHtml()); zonaPoligono.openPopup(); });
+        // Solo auto-centrar la primera vez que llega la zona real, no en cada click
+        if (!primerAjusteHecho) {
+          primerAjusteHecho = true;
+          setTimeout(ajustarVistaConAmbos, 180);
+        }
       }
     };
+    window.centrarEnZona = function(puntos){
+      try {
+        if (zonaPoligono) {
+          map.fitBounds(zonaPoligono.getBounds(), { padding: [28, 28], maxZoom: 17 });
+        } else if (puntos && puntos.length>0) {
+          var b = L.latLngBounds(puntos); map.fitBounds(b, { padding: [28,28], maxZoom: 17 });
+        }
+      } catch(e){}
+    };
+    window.centrarEnMiUbicacion = function(){
+      if (miUbicacionActual) map.setView(miUbicacionActual, 16);
+    };
     window.setZona(${zonaCoords});
+    if (${zonaCoords}.length > 2) {
+      try { setTimeout(function(){ if(zonaPoligono && !primerAjusteHecho){ primerAjusteHecho=true; ajustarVistaConAmbos(); } }, 350); } catch(e){}
+    }
 
     var miIcono = L.divIcon({
       className: '',
@@ -185,9 +309,19 @@ function buildHtml(
     var incidenteMarcadores = {};
 
     window.setMiUbicacion = function (lat, lng) {
+      miUbicacionActual = [lat, lng];
       if (!miMarcador) {
-        miMarcador = L.marker([lat, lng], { icon: miIcono }).addTo(map);
-        map.setView([lat, lng], map.getZoom());
+        miMarcador = L.marker([lat, lng], { icon: miIcono }).addTo(map).bindPopup('📍 Mi ubicación actual');
+        miMarcador.on('click', function(){ miMarcador.openPopup(); });
+        // Si es la primera ubicación y aún no hay ajuste, centrar incluyendo ambos
+        if (!primerAjusteHecho) {
+          primerAjusteHecho = true;
+          setTimeout(ajustarVistaConAmbos, 180);
+        } else if (!zonaPoligono) {
+          map.setView([lat, lng], 15);
+        }
+        // Si ya hay zona, no mover el mapa automáticamente (el guardia puede estar explorando),
+        // pero el marcador sí queda agregado y visible al hacer "Mi ubicación"
       } else {
         miMarcador.setLatLng([lat, lng]);
       }
