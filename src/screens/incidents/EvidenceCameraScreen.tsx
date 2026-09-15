@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { colors, radius, spacing } from '@/theme';
@@ -13,6 +14,7 @@ type Props = NativeStackScreenProps<AppStackParamList, 'EvidenceCamera'>;
 
 export function EvidenceCameraScreen({ navigation, route }: Props) {
   const { modo, evidenciasPrevias, returnTo, borrador } = route.params;
+  const insets = useSafeAreaInsets();
   const [permisoCamara, solicitarPermisoCamara] = useCameraPermissions();
   const [permisoMic, solicitarPermisoMic] = useMicrophonePermissions();
   const [ocupado, setOcupado] = useState(false);
@@ -115,7 +117,7 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      <View style={styles.controls}>
+      <View style={[styles.controls, { paddingBottom: Math.max(insets.bottom, 12) + spacing.md }]}>
         {modo === 'foto' ? (
           <Button
             label={ocupado ? 'Capturando…' : 'Tomar foto'}

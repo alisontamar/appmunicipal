@@ -49,11 +49,17 @@ function mapIncidente(d: HechoDTO, origen?: NuevoIncidente): Incidente {
 
 /** RF-APP-08 — registrar incidente (robo, asalto, etc.). */
 export async function registrarIncidente(data: NuevoIncidente): Promise<Incidente> {
-  const evidenciaUrls = await Promise.all(
-    data.evidenciaUris.map((uri) => subirEvidencia(uri, 'incidentes')),
+  // Detectar si cada evidencia es video o foto para mandarlo con tipo correcto
+  // (antes siempre mandaba {url} sin tipo -> backend lo guardaba como 'foto')
+  const EXT_VIDEO = ['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm'];
+  const esVideo = (uri: string) => EXT_VIDEO.some((ext) => uri.toLowerCase().includes(ext));
+  const evidenciasConTipo = await Promise.all(
+    data.evidenciaUris.map(async (uri) => {
+      const url = await subirEvidencia(uri, 'incidentes');
+      return { url, tipo: (esVideo(uri) ? 'video' : 'foto') as 'foto' | 'video' };
+    }),
   );
-  // Si el backend no devuelve `evidencias` en la respuesta, mapIncidente hace
-  // fallback a `origen.evidenciaUris` — debe ser la URL ya subida, no la ruta local.
+  const evidenciaUrls = evidenciasConTipo.map((e) => e.url);
   const origen: NuevoIncidente = { ...data, evidenciaUris: evidenciaUrls };
   const d = await request<HechoDTO>('/hechos', {
     method: 'POST',
@@ -65,7 +71,7 @@ export async function registrarIncidente(data: NuevoIncidente): Promise<Incident
       lng: data.ubicacion.longitud,
       ocurridoEn: data.ubicacion.timestamp,
       turnoId: data.turnoId || undefined,
-      evidencias: evidenciaUrls.map((url) => ({ url })),
+      evidencias: evidenciasConTipo.map((e) => ({ url: e.url, tipo: e.tipo })),
     }),
   });
   return mapIncidente(d, origen);

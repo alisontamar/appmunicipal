@@ -69,14 +69,28 @@ export async function iniciarServicio(fotoUri: string, ubicacion: GeoPoint): Pro
   return mapTurno(d);
 }
 
+async function obtenerBateriaPct(): Promise<number | null> {
+  try {
+    // Intentar leer batería via expo-battery si está disponible; si no, null (no bloquea el envío)
+    const Battery: any = await import('expo-battery').catch(() => null);
+    if (Battery && Battery.getBatteryLevelAsync) {
+      const level = await Battery.getBatteryLevelAsync(); // 0..1
+      if (typeof level === 'number' && level >= 0 && level <= 1) return Math.round(level * 100);
+    }
+  } catch {}
+  return null;
+}
+
 /** RF-APP-05 — envío periódico de ubicación GPS (va a la tabla de telemetría). */
 export async function enviarUbicacion(turnoId: string, p: GeoPoint): Promise<{ ok: boolean }> {
+  const bateriaPct = await obtenerBateriaPct();
   await request('/telemetry', {
     method: 'POST',
     body: JSON.stringify({
       turnoId,
       lat: p.latitud,
       lng: p.longitud,
+      bateriaPct,
       capturadoEn: p.timestamp,
     }),
   });

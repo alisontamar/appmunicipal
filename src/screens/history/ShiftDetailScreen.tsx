@@ -35,10 +35,34 @@ export function ShiftDetailScreen({ route }: Props) {
   const { turno: turnoActual, historialTurnos } = useShift();
   const { turnoId } = route.params;
 
-  const turno =
+  const [turnoRemoto, setTurnoRemoto] = React.useState<any>(null);
+  const [cargandoTurno, setCargandoTurno] = React.useState(false);
+
+  const turnoLocal =
     (turnoActual?.id === turnoId ? turnoActual : undefined) ??
     historialTurnos.find((t) => t.id === turnoId) ??
     mockTurnosHistoricos.find((t) => t.id === turnoId);
+
+  const turno = turnoLocal ?? turnoRemoto;
+
+  // Si no está en memoria (ej. turno viejo solo en backend), traerlo
+  React.useEffect(() => {
+    if (turnoLocal || cargandoTurno) return;
+    let vivo = true;
+    setCargandoTurno(true);
+    import('@/api/turnos')
+      .then((m) => m.obtenerTurno(turnoId))
+      .then((t) => {
+        if (vivo && t) setTurnoRemoto(t);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (vivo) setCargandoTurno(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [turnoId, turnoLocal, cargandoTurno]);
 
   // Recorrido real (breadcrumb GPS) traído del backend. Si falla (turno de
   // ejemplo, sin conexión, aún sin puntos) se cae al recorrido local del turno.
@@ -64,6 +88,13 @@ export function ShiftDetailScreen({ route }: Props) {
   const puntos = recorrido.length > 0 ? recorrido : (turno?.recorrido ?? []);
 
   if (!turno) {
+    if (cargandoTurno) {
+      return (
+        <ScreenContainer>
+          <Text style={typography.body}>Cargando detalle del turno…</Text>
+        </ScreenContainer>
+      );
+    }
     return (
       <ScreenContainer>
         <Text style={typography.body}>No se encontró el turno.</Text>

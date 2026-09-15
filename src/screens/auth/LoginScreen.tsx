@@ -4,10 +4,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
+  Keyboard,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,7 +47,24 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [mostrarHuella, setMostrarHuella] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const passwordRef = useRef<TextInput>(null);
+
+  // Sin scroll: el teclado virtual es el único que mueve el bloque (pan nativo + ajuste fino).
+  // Con softwareKeyboardLayoutMode:pan en app.json, Android hace "pan" del viewport,
+  // pero en algunos dispositivos eso solo no alcanza a liberar los inputs tapados por
+  // el teclado (sobre todo con el escudo absoluto y paddingTop:190). Escuchamos la altura
+  // real del teclado y aplicamos un translateY suave al contenedor, sin habilitar scroll.
+  useEffect(() => {
+    const onShow = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const onHide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, []);
 
   // La huella solo tiene sentido si ya hay un usuario guardado de un login  anterior
   useEffect(() => {
@@ -82,7 +100,7 @@ export function LoginScreen({ navigation }: Props) {
     <View style={styles.root}>
       <Image
         source={escudo}
-        style={styles.escudo}
+        style={[styles.escudo, keyboardHeight > 0 && { opacity: 0 }]}
         resizeMode="contain"
         accessibilityLabel="Escudo del G.A.M. Cochabamba"
       />
@@ -91,77 +109,86 @@ export function LoginScreen({ navigation }: Props) {
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          enabled
         >
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headline}>
-              <Text style={styles.title}>Iniciar{'\n'}sesión</Text>
-              <Text style={styles.subtitle}>
-                Guardia Municipal · Rondas{'\n'}
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View
+              style={[
+                styles.scroll,
+                keyboardHeight > 0 && {
+                  paddingTop: 24,
+                  paddingBottom: 12,
+                  transform: [{ translateY: -Math.min(keyboardHeight * 0.35, 110) }],
+                },
+              ]}
+            >
+              <View style={styles.headline}>
+                <Text style={styles.title}>Iniciar{'\n'}sesión</Text>
+                <Text style={styles.subtitle}>
+                  Guardia Municipal · Rondas{'\n'}
+                  Dirección de Seguridad Ciudadana · G.A.M. Cochabamba
+                </Text>
+              </View>
+
+              <View style={styles.form}>
+                <TextField
+                  label="Usuario"
+                  onDark
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={usuario}
+                  onChangeText={setUsuario}
+                  placeholder="Ej. jperez"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+                <TextField
+                  ref={passwordRef}
+                  label="Contraseña"
+                  onDark
+                  secureTextEntry
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  error={error}
+                  returnKeyType="go"
+                  onSubmitEditing={onSubmit}
+                />
+
+                <Button
+                  label="Ingresar"
+                  icon="arrow-forward"
+                  iconRight
+                  variant="secondary"
+                  large
+                  onPress={onSubmit}
+                  loading={loading}
+                  style={styles.cta}
+                />
+
+                {mostrarHuella && (
+                  <Pressable style={styles.huella} onPress={onSubmitBiometria} hitSlop={8}>
+                    <Ionicons name="finger-print" size={22} color={colors.gold} />
+                    <Text style={styles.huellaText}>Ingresar con huella / Face ID</Text>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  style={styles.forgot}
+                  onPress={() => navigation.navigate('ForgotPassword')}
+                  hitSlop={8}
+                >
+                  <Text style={styles.forgotText}>¿Olvidó su contraseña?</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.footer}>
                 Dirección de Seguridad Ciudadana · G.A.M. Cochabamba
               </Text>
             </View>
-
-            <View style={styles.form}>
-              <TextField
-                label="Usuario"
-                onDark
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={usuario}
-                onChangeText={setUsuario}
-                placeholder="Ej. jperez"
-                returnKeyType="next"
-                onSubmitEditing={() => passwordRef.current?.focus()}
-                blurOnSubmit={false}
-              />
-              <TextField
-                ref={passwordRef}
-                label="Contraseña"
-                onDark
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                error={error}
-                returnKeyType="go"
-                onSubmitEditing={onSubmit}
-              />
-
-              <Button
-                label="Ingresar"
-                icon="arrow-forward"
-                iconRight
-                variant="secondary"
-                large
-                onPress={onSubmit}
-                loading={loading}
-                style={styles.cta}
-              />
-
-              {mostrarHuella && (
-                <Pressable style={styles.huella} onPress={onSubmitBiometria} hitSlop={8}>
-                  <Ionicons name="finger-print" size={22} color={colors.gold} />
-                  <Text style={styles.huellaText}>Ingresar con huella / Face ID</Text>
-                </Pressable>
-              )}
-
-              <Pressable
-                style={styles.forgot}
-                onPress={() => navigation.navigate('ForgotPassword')}
-                hitSlop={8}
-              >
-                <Text style={styles.forgotText}>¿Olvidó su contraseña?</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.footer}>
-              Dirección de Seguridad Ciudadana · G.A.M. Cochabamba
-            </Text>
-          </ScrollView>
+          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -172,10 +199,11 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.navy900 },
   flex: { flex: 1 },
   scroll: {
-    flexGrow: 1,
+    flex: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: 190,
     paddingBottom: spacing.xl,
+    justifyContent: 'space-between',
   },
   escudo: {
     position: 'absolute',

@@ -14,8 +14,16 @@ export interface ItemPendiente {
 
 /** true si el celular tiene conexion a internet en este instante. */
 export async function hayConexion(): Promise<boolean> {
-  const estado = await NetInfo.fetch();
-  return Boolean(estado.isConnected && estado.isInternetReachable !== false);
+  try {
+    const estado = await NetInfo.fetch();
+    // En algunos Android isInternetReachable llega null (no confirmado) aunque sí hay internet.
+    // Antes exigía isInternetReachable !== false y dejaba encolado todo 5 minutos hasta que el
+    // listener de NetInfo disparara de nuevo. Ahora basta con isConnected.
+    if (estado.isConnected) return true;
+    return Boolean(estado.isConnected && estado.isInternetReachable !== false);
+  } catch {
+    return true; // Si NetInfo falla, intentar enviar de todos modos y que el catch encole
+  }
 }
 
 async function leerCola(): Promise<ItemPendiente[]> {

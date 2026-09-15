@@ -31,12 +31,21 @@ export async function enviarAlertaSos(
   guardiaId: string,
   ubicacion: GeoPoint,
 ): Promise<AlertaSos> {
+  let bateriaPct: number | null = null;
+  try {
+    const Battery: any = await import('expo-battery').catch(() => null);
+    if (Battery?.getBatteryLevelAsync) {
+      const l = await Battery.getBatteryLevelAsync();
+      if (typeof l === 'number') bateriaPct = Math.round(l * 100);
+    }
+  } catch {}
   const d = await request<TelemetriaSosDTO>('/telemetry', {
     method: 'POST',
     body: JSON.stringify({
       turnoId: turnoId || undefined,
       lat: ubicacion.latitud,
       lng: ubicacion.longitud,
+      bateriaPct,
       esSos: true,
       sosEstado: 'pendiente',
       capturadoEn: ubicacion.timestamp,

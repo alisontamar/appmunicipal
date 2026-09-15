@@ -1,5 +1,5 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -18,6 +18,9 @@ interface Props {
   header?: React.ReactNode;
   /** color de los íconos de la barra de estado: 'light' para fondos oscuros (por defecto). */
   statusBar?: 'light' | 'dark';
+  /** pull-to-refresh */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }
 
 export function ScreenContainer({
@@ -28,6 +31,8 @@ export function ScreenContainer({
   edges = ['bottom'],
   header,
   statusBar = 'light',
+  refreshing,
+  onRefresh,
 }: Props) {
   const resolvedEdges: Edge[] =
     header && !edges.includes('top') ? ['top', ...edges] : edges;
@@ -49,6 +54,9 @@ export function ScreenContainer({
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} colors={[colors.navy900]} tintColor={colors.navy900} /> : undefined
+            }
           >
             {inner}
           </ScrollView>
