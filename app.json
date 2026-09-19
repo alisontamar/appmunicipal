@@ -60,7 +60,12 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Se usa su ubicación para registrar el inicio/cierre de turno, la ruta de patrullaje y la ubicación de incidentes y mandados."
+          "locationWhenInUsePermission": "Se usa su ubicación para registrar el inicio/cierre de turno, la ruta de patrullaje y la ubicación de incidentes y mandados.",
+          "locationAlwaysAndWhenInUsePermission": "Se usa su ubicación, incluso con la app en segundo plano, para seguir registrando su recorrido de patrullaje mientras el turno está activo.",
+          "locationAlwaysPermission": "Se usa su ubicación, incluso con la app en segundo plano, para seguir registrando su recorrido de patrullaje mientras el turno está activo.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],

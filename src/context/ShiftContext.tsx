@@ -22,6 +22,7 @@ import {
   obtenerUbicacionActual,
   type SeguimientoUbicacion,
 } from '@/utils/location';
+import { iniciarSeguimientoBackground, detenerSeguimientoBackground, setPuntoListener } from '@/utils/backgroundLocationTask';
 import {
   encolar,
   hayConexion,
@@ -202,9 +203,14 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(id);
   }, [sincronizarAhora]);
 
+  // Detiene AMBOS mecanismos posibles de tracking sin necesidad de saber
+  // cuál quedó activo (el de background es un no-op seguro si nunca se
+  // llegó a iniciar — ver detenerSeguimientoBackground).
   const detenerSeguimiento = useCallback(() => {
     seguimientoRef.current?.remove();
     seguimientoRef.current = null;
+    setPuntoListener(null);
+    void detenerSeguimientoBackground();
   }, []);
 
   const enviarUbicacionOEncolar = useCallback(
@@ -219,30 +225,64 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     [refrescarPendientes],
   );
 
-  const iniciarSeguimiento = useCallback(() => {
-    detenerSeguimiento();
-    setAvisoUbicacion(null);
-    iniciarSeguimientoUbicacion(
-      (punto) => {
-        setTurno((prev) => {
-          if (!prev || prev.estado !== 'en_servicio') return prev;
-          enviarUbicacionOEncolar(prev.id, punto);
-          const anterior = prev.recorrido[prev.recorrido.length - 1];
-          const tramo = anterior ? distanciaMetros(anterior, punto) : 0;
-          // Quieto o micro-movimiento: no suma metros ni ensucia el recorrido.
-          if (anterior && tramo < MIN_DESPLAZAMIENTO_M) return prev;
-          return {
-            ...prev,
-            recorrido: [...prev.recorrido, punto],
-            distanciaMetros: prev.distanciaMetros + tramo,
-          };
-        });
-      },
-      (err) => setAvisoUbicacion(err.message),
-    ).then((sub) => {
-      seguimientoRef.current = sub;
+  // Actualiza SOLO el estado local (recorrido/distancia) — no manda nada a
+  // la red. El envío real vive en cada uno de los dos caminos posibles de
+  // `iniciarSeguimiento` (uno ya manda por su cuenta, ver comentario ahí).
+  const actualizarRecorridoLocal = useCallback((punto: GeoPoint) => {
+    setTurno((prev) => {
+      if (!prev || prev.estado !== 'en_servicio') return prev;
+      const anterior = prev.recorrido[prev.recorrido.length - 1];
+      const tramo = anterior ? distanciaMetros(anterior, punto) : 0;
+      // Quieto o micro-movimiento: no suma metros ni ensucia el recorrido.
+      if (anterior && tramo < MIN_DESPLAZAMIENTO_M) return prev;
+      return {
+        ...prev,
+        recorrido: [...prev.recorrido, punto],
+        distanciaMetros: prev.distanciaMetros + tramo,
+      };
     });
-  }, [detenerSeguimiento, enviarUbicacionOEncolar]);
+  }, []);
+
+  // Tracking en segundo plano (pedido explícito: "cuando el celular está
+  // apagado igual debería mandar el gps"). Primero intenta
+  // `iniciarSeguimientoBackground` (Location.startLocationUpdatesAsync +
+  // foreground service — sigue funcionando con la pantalla apagada o la
+  // app minimizada, ver backgroundLocationTask.ts). Esa tarea YA manda el
+  // punto a /telemetry por su cuenta (para poder correr headless, sin
+  // depender de que este componente esté montado) — acá solo hace falta
+  // reflejarlo en el estado local (recorrido/distancia) y refrescar el
+  // contador de pendientes.
+  //
+  // Si el guardia no otorgó el permiso "Permitir siempre" (o el foreground
+  // service no pudo arrancar), degrada AL COMPORTAMIENTO DE ANTES de este
+  // cambio: `iniciarSeguimientoUbicacion` foreground-only — sigue
+  // funcionando igual que siempre mientras la app está abierta, solo se
+  // pierde el tracking con la app en segundo plano.
+  const iniciarSeguimiento = useCallback(
+    (turnoId: string) => {
+      detenerSeguimiento();
+      setAvisoUbicacion(null);
+      iniciarSeguimientoBackground(turnoId).then((resultado) => {
+        if (resultado === 'background') {
+          setPuntoListener((punto) => {
+            actualizarRecorridoLocal(punto);
+            refrescarPendientes();
+          });
+          return;
+        }
+        iniciarSeguimientoUbicacion(
+          (punto) => {
+            actualizarRecorridoLocal(punto);
+            enviarUbicacionOEncolar(turnoId, punto);
+          },
+          (err) => setAvisoUbicacion(err.message),
+        ).then((sub) => {
+          seguimientoRef.current = sub;
+        });
+      });
+    },
+    [detenerSeguimiento, actualizarRecorridoLocal, enviarUbicacionOEncolar, refrescarPendientes],
+  );
 
   useEffect(() => {
     if (!turno || turno.estado !== 'en_servicio') return;
@@ -330,7 +370,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
           return restaurado;
         });
         if (aplicado) {
-          iniciarSeguimiento();
+          iniciarSeguimiento(restaurado.id);
           proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
           checkpointVenceRef.current = null;
           setCheckpointPendiente(false);
@@ -348,13 +388,23 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       const ubicacion = await obtenerUbicacionActual();
       const nuevo = await turnosApi.iniciarServicio(fotoUri, ubicacion);
       setTurno(nuevo);
-      iniciarSeguimiento();
+      // Manda YA el punto de arranque a /telemetry (bug reportado: "tarda
+      // demasiado en aparecer en el dashboard cuando un guardia está en
+      // servicio"). Antes el primer punto que llegaba a guardia_telemetria
+      // (la tabla que lee la Web) era el del primer tick de
+      // watchPositionAsync dentro de iniciarSeguimiento — que puede tardar
+      // varios segundos más en resolver un fix GPS en frío, sumado a que
+      // recién ahí se dispara el evento en vivo que hace aparecer el pin.
+      // Ya se tiene `ubicacion` (se pidió arriba para el selfie de inicio)
+      // — mandarla de una evita esa espera extra.
+      enviarUbicacionOEncolar(nuevo.id, ubicacion);
+      iniciarSeguimiento(nuevo.id);
       proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
       checkpointVenceRef.current = null;
       setCheckpointPendiente(false);
       return nuevo;
     },
-    [iniciarSeguimiento],
+    [iniciarSeguimiento, enviarUbicacionOEncolar],
   );
 
   const cerrarServicio = useCallback(async () => {
