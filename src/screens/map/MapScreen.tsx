@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, Alert } from 'react-native';
+import { AppState, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, typography } from '@/theme';
@@ -13,7 +13,6 @@ import {
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
 import { patrullaVigente, zonaDePatrulla, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
-import { mockZonaAsignada } from '@/mocks';
 import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
@@ -44,26 +43,27 @@ export function MapScreen() {
       const puntosCalles = trazado.length >= 2 ? trazado : puntos;
       if (puntos.length > 0) {
         const nuevoId = p?.id ?? JSON.stringify(puntos.slice(0, 2));
-        const esNuevaRuta = zonaIdRef.current && zonaIdRef.current !== nuevoId && !primerCargaRef.current;
         setZona(puntos);
         setTrazadoCalles(puntosCalles);
         if (p) setPatrullaInfo({ nombre: p.nombre ?? p.rutaNombre ?? null, rutaNombre: p.rutaNombre, id: p.id });
         zonaIdRef.current = nuevoId;
-        if (esNuevaRuta && mostrarAviso) {
-          Alert.alert('¡Nueva ruta asignada!', `${p?.rutaNombre || p?.nombre || 'Te asignaron una ruta'} — ya la ves en el mapa en azul. Toca el polígono para detalles.`);
-        }
+        // El aviso de ruta nueva/modificada/eliminada ya no se dispara acá
+        // — vive en ShiftContext (verificarRuta), que corre en TODA la app
+        // (Inicio, Historial, Perfil), no solo con esta pantalla montada.
+        // Antes solo avisaba si el guardia justo estaba viendo el Mapa.
         primerCargaRef.current = false;
         return;
       }
-      // Sin ruta asignada hoy: mantener vacío (no mostrar cuadrado default hasta confirmar)
-      if (primerCargaRef.current) {
-        // Solo en primera carga sin ruta, mostrar mock sutil para no dejar mapa vacío
-        // pero marcado como referencia
-        setZona(mockZonaAsignada);
-      }
+      // Sin ruta asignada hoy: mantener vacío. Antes caía a un mock
+      // ("no dejar el mapa vacío") que era un cuadrado fijo de 4 puntos
+      // alrededor de una coordenada de referencia (mockZonaAsignada) — el
+      // guardia lo veía como si tuviera una ruta real asignada cuando en
+      // realidad el admin todavía no le asignó ninguna. El estado vacío ya
+      // tiene su propio mensaje ("Sin zona asignada hoy...", más abajo en
+      // el render), así que no hace falta simular una zona.
+      setZona([]);
       primerCargaRef.current = false;
     } catch {
-      if (primerCargaRef.current) setZona(mockZonaAsignada);
       primerCargaRef.current = false;
     } finally {
       setCargandoZona(false);

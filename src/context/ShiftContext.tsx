@@ -7,11 +7,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 
 import * as checkpointsApi from '@/api/checkpoints';
 import * as incidentesApi from '@/api/incidentes';
 import * as mandadosApi from '@/api/mandados';
+import { patrullaVigente } from '@/api/patrullas';
 import * as sosApi from '@/api/sos';
 import * as turnosApi from '@/api/turnos';
 import { useAuth } from '@/context/AuthContext';
@@ -42,6 +44,12 @@ const CHECKPOINT_TICK_MS = 15_000;
 // (watchPositionAsync ya emite cada ~25 m al moverse).
 const MIN_DESPLAZAMIENTO_M = 10;
 
+export interface AvisoRuta {
+  tipo: 'asignada' | 'modificada' | 'eliminada';
+  titulo: string;
+  mensaje: string;
+}
+
 interface ShiftState {
   turno: Turno | null;
   historialTurnos: Turno[];
@@ -49,6 +57,15 @@ interface ShiftState {
   avisoUbicacion: string | null;
   checkpointPendiente: boolean;
   pendientesSincronizar: number;
+  /**
+   * Cambio de ruta detectado (asignada/modificada/eliminada desde la web)
+   * — vive acá, no en MapScreen, para que avise sin importar en qué tab
+   * esté el guardia (Inicio, Historial, Perfil...). Antes solo se
+   * enteraba si tenía la pestaña de Mapa abierta en el momento exacto, o
+   * saliendo y volviendo a entrar a la app.
+   */
+  avisoRuta: AvisoRuta | null;
+  limpiarAvisoRuta: () => void;
   iniciarServicio: (fotoUri: string) => Promise<Turno>;
   cerrarServicio: () => Promise<Turno>;
   agregarIncidente: (data: Omit<incidentesApi.NuevoIncidente, 'turnoId' | 'ubicacion'>) => Promise<Incidente>;
@@ -156,11 +173,71 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const [avisoUbicacion, setAvisoUbicacion] = useState<string | null>(null);
   const [checkpointPendiente, setCheckpointPendiente] = useState(false);
   const [pendientesSincronizar, setPendientesSincronizar] = useState(0);
+  const [avisoRuta, setAvisoRuta] = useState<AvisoRuta | null>(null);
   const seguimientoRef = useRef<SeguimientoUbicacion | null>(null);
   const proximoCheckpointRef = useRef<number | null>(null);
   const checkpointVenceRef = useRef<number | null>(null);
   const conectadoAntesRef = useRef<boolean | null>(null);
   const rehidratadoRef = useRef<string | null>(null);
+  // null = todavía no se hizo la primera lectura (no avisar en el arranque
+  // de la app por una ruta que ya existía de antes).
+  const rutaFirmaRef = useRef<{ id: string | null; firma: string } | null>(null);
+
+  const limpiarAvisoRuta = useCallback(() => setAvisoRuta(null), []);
+
+  // Detecta si el centro de monitoreo asignó, editó o eliminó la ruta del
+  // guardia — corre acá (Provider global) y no solo dentro de la pantalla
+  // de Mapa, para que el aviso llegue sin importar el tab activo (pedido
+  // explícito: "no importa si estoy en inicio, historial o perfil").
+  const verificarRuta = useCallback(async () => {
+    let p: Awaited<ReturnType<typeof patrullaVigente>>;
+    try {
+      p = await patrullaVigente();
+    } catch {
+      return; // sin señal / error transitorio — no tratarlo como "ruta eliminada"
+    }
+    const idActual = p?.id ?? null;
+    const firmaActual = p ? `${p.rutaNombre ?? p.nombre ?? ''}|${JSON.stringify(p.trazado)}|${JSON.stringify(p.poligonoGeojson)}` : '';
+    const anterior = rutaFirmaRef.current;
+    rutaFirmaRef.current = { id: idActual, firma: firmaActual };
+    if (!anterior) return; // primera lectura: solo establece la base
+
+    if (anterior.id === idActual) {
+      if (idActual && anterior.firma !== firmaActual) {
+        setAvisoRuta({
+          tipo: 'modificada',
+          titulo: 'Tu ruta cambió',
+          mensaje: `${p?.rutaNombre || p?.nombre || 'Tu ruta asignada'} fue modificada por el centro de monitoreo — revisa el mapa actualizado.`,
+        });
+      }
+      return;
+    }
+    if (idActual === null) {
+      setAvisoRuta({
+        tipo: 'eliminada',
+        titulo: 'Ruta cancelada',
+        mensaje: 'El centro de monitoreo canceló tu ruta asignada.',
+      });
+    } else {
+      setAvisoRuta({
+        tipo: 'asignada',
+        titulo: '¡Nueva ruta asignada!',
+        mensaje: `${p?.rutaNombre || p?.nombre || 'Te asignaron una ruta'} — ya la puedes ver en el mapa.`,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    verificarRuta();
+    const id = setInterval(verificarRuta, 20_000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') verificarRuta();
+    });
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, [verificarRuta]);
 
   const refrescarPendientes = useCallback(async () => {
     const items = await listarPendientes();
@@ -506,6 +583,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       avisoUbicacion,
       checkpointPendiente,
       pendientesSincronizar,
+      avisoRuta,
+      limpiarAvisoRuta,
       iniciarServicio,
       cerrarServicio,
       agregarIncidente,
@@ -522,6 +601,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       avisoUbicacion,
       checkpointPendiente,
       pendientesSincronizar,
+      avisoRuta,
+      limpiarAvisoRuta,
       iniciarServicio,
       cerrarServicio,
       agregarIncidente,

@@ -8,6 +8,7 @@ export { MapPlaceholder } from './MapPlaceholder';
 export { OsmMapView } from './OsmMapView';
 export type { OsmMapViewHandle, OsmMarker, OsmPoint } from './OsmMapView';
 export { RiskBadge } from './RiskBadge';
+export { RouteChangeWatcher } from './RouteChangeWatcher';
 export { ScreenContainer } from './ScreenContainer';
 export { ScreenHeader } from './ScreenHeader';
 export { SectionTitle } from './SectionTitle';

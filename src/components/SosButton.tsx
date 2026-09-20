@@ -19,8 +19,16 @@ export function SosButton() {
   const tabBarHeight = useTabBarHeight();
 
   // Cuando el operador marca como atendido (desde la web), el backend limpia esSos.
-  // Hacemos polling suave cada 15s al endpoint de estado para detectar el cambio y avisar
+  // Hacemos polling al endpoint de estado para detectar el cambio y avisar
   // "Solicitud atendida — ayuda en camino/ya atendida" en vez de dejar el botón pulsado para siempre.
+  //
+  // La app no tiene un canal de push en vivo (socket) todavía — el Operador
+  // resuelve en la web y aquí solo nos enteramos cuando este polling
+  // vuelve a preguntar. Bug reportado: con 15s de intervalo, el guardia
+  // percibía que "tardaba muchísimo" en saber que ya lo habían atendido.
+  // 4s es un compromiso razonable sin meter socket.io-client en la app
+  // (ese sería el fix real de fondo — este intervalo es un parche mientras
+  // tanto, el request es liviano y solo corre mientras el SOS está activo).
   useEffect(() => {
     if (!sosActivo || atendido) return;
     let cancelado = false;
@@ -36,7 +44,7 @@ export function SosButton() {
           clearInterval(id);
         }
       } catch {}
-    }, 15000);
+    }, 4000);
     // Auto-atendido simulado a los 90s si el backend no responde (evita botón pegado forever)
     const timeout = setTimeout(() => {
       if (!cancelado && sosActivo && !atendido) {
