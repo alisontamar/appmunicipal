@@ -68,6 +68,14 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
   const pendingZonaRef = useRef<OsmPoint[] | null>(zona.length > 0 ? zona : null);
   const pendingUbicacionRef = useRef<OsmPoint | null>(null);
   const pendingIncidentesRef = useRef<OsmMarker[] | null>(null);
+  // "Ver mi ruta"/"Mi ubicación" tocados antes de que el WebView termine de
+  // cargar quedaban en la nada: centrarEnZona guardaba la zona pendiente
+  // pero nunca recentraba después, y centrarEnMiUbicacion no tenía ningún
+  // resguardo — el tap se perdía en silencio (reportado 2026-09-19: "a
+  // veces los botones... no me funcionan"). Se recuerda la INTENCIÓN acá y
+  // se ejecuta de verdad en onLoadEnd si el guardia tocó antes de tiempo.
+  const pendingCentrarZonaRef = useRef(false);
+  const pendingCentrarMiUbicacionRef = useRef(false);
   const mapReadyRef = useRef(false);
 
   const html = useMemo(
@@ -128,6 +136,7 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
     centrarEnZona: (puntos) => {
       if (!mapReadyRef.current) {
         pendingZonaRef.current = puntos;
+        pendingCentrarZonaRef.current = true;
         return;
       }
       webRef.current?.injectJavaScript(
@@ -135,6 +144,10 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
       );
     },
     centrarEnMiUbicacion: () => {
+      if (!mapReadyRef.current) {
+        pendingCentrarMiUbicacionRef.current = true;
+        return;
+      }
       webRef.current?.injectJavaScript(`window.centrarEnMiUbicacion(); true;`);
     },
   }));
@@ -152,8 +165,20 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
           if (pendingZonaRef.current && pendingZonaRef.current.length > 0) {
             const p = pendingZonaRef.current;
             pendingZonaRef.current = null;
+            const centrar = pendingCentrarZonaRef.current;
+            pendingCentrarZonaRef.current = false;
             setTimeout(() => {
               webRef.current?.injectJavaScript(`window.setZona(${JSON.stringify(p.map((pt) => [pt.latitud, pt.longitud]))}); true;`);
+              if (centrar) {
+                setTimeout(() => {
+                  webRef.current?.injectJavaScript(`window.centrarEnZona(${JSON.stringify(p.map((pt) => [pt.latitud, pt.longitud]))}); true;`);
+                }, 150);
+              }
+            }, 200);
+          } else if (pendingCentrarZonaRef.current) {
+            pendingCentrarZonaRef.current = false;
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(`window.centrarEnZona([]); true;`);
             }, 200);
           }
           if (pendingUbicacionRef.current) {
@@ -162,6 +187,12 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
             setTimeout(() => {
               webRef.current?.injectJavaScript(`window.setMiUbicacion(${u.latitud}, ${u.longitud}); true;`);
             }, 300);
+          }
+          if (pendingCentrarMiUbicacionRef.current) {
+            pendingCentrarMiUbicacionRef.current = false;
+            setTimeout(() => {
+              webRef.current?.injectJavaScript(`window.centrarEnMiUbicacion(); true;`);
+            }, 350);
           }
           if (pendingIncidentesRef.current && pendingIncidentesRef.current.length > 0) {
             const m = pendingIncidentesRef.current;
@@ -301,7 +332,17 @@ function buildHtml(
       iconAnchor: [8, 8]
     });
 
-    var miMarcador = null;
+    // El marcador de "mi ubicación" se crea YA con el centro inicial (que
+    // es la posición del guardia al momento de montar el mapa) en vez de
+    // esperar la primera llamada a window.setMiUbicacion() desde React
+    // Native — esa primera llamada corría antes de que el ref del WebView
+    // quedara asignado (el mapa recién se monta cuando llega la primera
+    // ubicación) y se perdía en silencio, dejando el mapa sin marcador
+    // hasta el siguiente fix de GPS real (reportado 2026-09-19: "a veces
+    // no me aparece el marcador de donde estoy").
+    miUbicacionActual = [${centro.latitud}, ${centro.longitud}];
+    var miMarcador = L.marker(miUbicacionActual, { icon: miIcono }).addTo(map).bindPopup('📍 Mi ubicación actual');
+    miMarcador.on('click', function(){ miMarcador.openPopup(); });
     var recorridoLinea = L.polyline(${recorridoCoords}, { color: '${recorridoColor}', weight: 4 }).addTo(map);
     if (${recorridoCoords}.length > 1) {
       try { map.fitBounds(recorridoLinea.getBounds(), { padding: [24, 24] }); } catch (e) {}
