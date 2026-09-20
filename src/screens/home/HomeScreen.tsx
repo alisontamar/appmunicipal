@@ -19,7 +19,7 @@ type Nav = NativeStackNavigationProp<AppStackParamList>;
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { guardia } = useAuth();
-  const { turno, enServicio, avisoUbicacion, sincronizarAhora } = useShift();
+  const { turno, enServicio, avisoUbicacion, sincronizarAhora, revisarRuta } = useShift();
   const [refreshing, setRefreshing] = useState(false);
   const [incidentesReales, setIncidentesReales] = useState<number | null>(null);
   useRelojEnVivo(1000);
@@ -42,15 +42,20 @@ export function HomeScreen() {
     if (enServicio) recargarIncidentes();
     else setIncidentesReales(null);
   }, [enServicio, turno?.id, turno?.incidentes.length, recargarIncidentes]);
+  // Antes solo sincronizaba la cola offline y recontaba incidentes — nunca
+  // volvía a preguntar por la ruta asignada, así que un cambio hecho desde
+  // la web no se notaba acá aunque el guardia tirara del refresh a
+  // propósito (el chequeo automático de ShiftContext solo corre cada 20s
+  // o al volver del background). Con esto, tirar del refresh SIEMPRE
+  // revisa la ruta ya mismo, no espera el próximo tick.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await sincronizarAhora();
-      await recargarIncidentes();
+      await Promise.all([sincronizarAhora(), recargarIncidentes(), revisarRuta()]);
     } finally {
       setRefreshing(false);
     }
-  }, [sincronizarAhora, recargarIncidentes]);
+  }, [sincronizarAhora, recargarIncidentes, revisarRuta]);
 
   return (
     <ScreenContainer scroll statusBar="dark" header={<ScreenHeader title="Inicio" />} refreshing={refreshing} onRefresh={onRefresh}>

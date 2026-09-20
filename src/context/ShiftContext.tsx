@@ -66,6 +66,10 @@ interface ShiftState {
    */
   avisoRuta: AvisoRuta | null;
   limpiarAvisoRuta: () => void;
+  /** Reconsulta la ruta asignada ya mismo (no espera el próximo tick del poll de 20s) — para pull-to-refresh. */
+  revisarRuta: () => Promise<void>;
+  /** Trae el historial de turnos finalizados desde el servidor — para pull-to-refresh en Historial. */
+  refrescarHistorial: () => Promise<void>;
   iniciarServicio: (fotoUri: string) => Promise<Turno>;
   cerrarServicio: () => Promise<Turno>;
   agregarIncidente: (data: Omit<incidentesApi.NuevoIncidente, 'turnoId' | 'ubicacion'>) => Promise<Incidente>;
@@ -460,6 +464,31 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
 
   const ultimaUbicacion = useCallback((): Promise<GeoPoint> => obtenerUbicacionActual(), []);
 
+  // `historialTurnos` antes SOLO se llenaba con lo que el guardia cerraba
+  // en la MISMA sesión de la app (cerrarServicio hacía un prepend local) —
+  // nunca se traía del servidor lo que ya existía de antes (RF-APP-09,
+  // turnosApi.listarTurnos ya existía pero nadie la llamaba para esto).
+  // Resultado: HistoryScreen mostraba solo datos mock hasta que el guardia
+  // cerraba turnos nuevos, y no había ninguna forma de refrescarlo — el
+  // pull-to-refresh de esa pantalla ni existía. Esto es lo que sí trae la
+  // lista real y se puede volver a llamar manualmente.
+  const refrescarHistorial = useCallback(async () => {
+    try {
+      const todos = await turnosApi.listarTurnos();
+      const finalizados = todos
+        .filter((t) => t.estado === 'finalizado')
+        .sort((a, b) => (b.horaInicio ? new Date(b.horaInicio).getTime() : 0) - (a.horaInicio ? new Date(a.horaInicio).getTime() : 0));
+      setHistorialTurnos(finalizados);
+    } catch (e) {
+      console.warn('[Shift] no se pudo refrescar el historial de turnos:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!guardia) return;
+    refrescarHistorial();
+  }, [guardia, refrescarHistorial]);
+
   const iniciarServicio = useCallback(
     async (fotoUri: string) => {
       const ubicacion = await obtenerUbicacionActual();
@@ -585,6 +614,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       pendientesSincronizar,
       avisoRuta,
       limpiarAvisoRuta,
+      revisarRuta: verificarRuta,
+      refrescarHistorial,
       iniciarServicio,
       cerrarServicio,
       agregarIncidente,
@@ -603,6 +634,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       pendientesSincronizar,
       avisoRuta,
       limpiarAvisoRuta,
+      verificarRuta,
+      refrescarHistorial,
       iniciarServicio,
       cerrarServicio,
       agregarIncidente,
