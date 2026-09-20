@@ -109,3 +109,51 @@ Registrar Incidente / Registrar Mandado / Ver Mapa → Cerrar Servicio → Resum
   mucho tráfico se recomienda revisar su [política de uso](https://operations.osmfoundation.org/policies/tiles/)
   o contratar un proveedor de tiles OSM (ej. MapTiler, Stadia Maps), que igual seguiría
   siendo mucho más económico que Google Maps.
+
+## Requisitos para tiempo real y geolocalización
+
+El mapa en vivo, el botón SOS y el aviso de "ruta asignada" dependen de que el GPS
+del teléfono y la conexión de datos se mantengan estables durante todo el turno.
+Requisitos — no son opcionales para un guardia real en campo:
+
+### Permisos de ubicación
+
+- **Ubicación en primer plano**: obligatoria — sin ella la app no puede iniciar un
+  servicio (`src/utils/location.ts`).
+- **Ubicación en segundo plano** (Android/iOS): necesaria para que el recorrido siga
+  registrándose con la pantalla apagada o la app minimizada. Requiere el permiso
+  "Permitir todo el tiempo" en Android y **no funciona en Expo Go** — necesita un
+  dev client / build nativo (ver "Pendientes" arriba).
+- **Exclusión de optimización de batería (Android)**: en varios fabricantes (Xiaomi,
+  Huawei, Samsung con modo ahorro agresivo) el sistema mata la app en segundo plano
+  salvo que el guardia la excluya manualmente de la optimización de batería — sin
+  esto, el seguimiento en vivo y la detección de "ruta modificada" (`ShiftContext`)
+  se detienen en silencio cuando el guardia cambia de pantalla o bloquea el
+  teléfono.
+
+### Frecuencia de GPS y consumo de datos
+
+Ping de ubicación cada ~15-90s según pantalla/config (RF-APP-05), más el polling de
+estado propio de la app (SOS cada 4s mientras hay una alerta activa, chequeo de ruta
+asignada cada 20s desde cualquier pantalla). El consumo de datos es bajo (peticiones
+JSON pequeñas) pero requiere señal de datos **continua**, no solo intermitente. En
+zonas de cobertura muy pobre, los pings fallidos se encolan localmente
+(`utils/offlineQueue.ts`) y se reintentan solos al recuperar señal — no se pierden,
+pero se retrasan.
+
+### Sin push en vivo (limitación conocida)
+
+La app **no tiene `socket.io-client`** — todo lo que se entera del centro de
+monitoreo (SOS resuelto, ruta asignada/editada/eliminada) es por **polling**, no por
+push real. Esto significa que siempre hay un delay mínimo entre que algo cambia en
+la web y que el guardia se entera, del orden del intervalo de polling
+correspondiente (4s para SOS, 20s para rutas). Agregar `socket.io-client` (mismo
+canal que ya usa la web — ver `gamc-api/src/infrastructure/realtime.ts`, sala
+`guardia:{id}`) eliminaría ese delay y es la mejora de fondo recomendada si el
+polling deja de sentirse "suficientemente rápido".
+
+### Versiones mínimas
+
+Expo SDK 54 / React Native 0.81 — respetar el mínimo de OS que exige esa versión de
+Expo (aproximadamente Android 6+ / iOS 13+; confirmar la versión exacta soportada al
+momento de generar el build).

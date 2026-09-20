@@ -37,7 +37,12 @@ export function SosButton() {
         // Intenta consultar el estado SOS del guardia; si no existe el endpoint, se ignora silenciosamente
         const { request } = await import('@/api/client');
         const data: any = await request('/telemetry/estado').catch(() => null);
-        if (!cancelado && data && data.esSos === false && data.sosEstado === 'atendido') {
+        // estadoOperativo !== 'emergencia' es la señal más directa (la
+        // misma que setEstadoOperativo actualiza de forma atómica al
+        // resolver) — se chequea además de esSos/sosEstado por si acaso,
+        // no en su lugar, para no depender de una sola fuente.
+        const resuelto = data && (data.estadoOperativo !== 'emergencia' || (data.esSos === false && data.sosEstado === 'atendido'));
+        if (!cancelado && resuelto) {
           setAtendido(true);
           setSosActivo(false);
           Alert.alert('Solicitud atendida', 'Tu solicitud SOS fue atendida. Ayuda en camino / ya fue gestionada por el centro de monitoreo.');

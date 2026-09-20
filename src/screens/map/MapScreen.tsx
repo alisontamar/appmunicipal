@@ -20,7 +20,7 @@ import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/loc
 const MAP_HEIGHT = 280;
 
 export function MapScreen() {
-  const { turno, enServicio, sincronizarAhora } = useShift();
+  const { turno, enServicio, sincronizarAhora, revisarRuta } = useShift();
   const [miUbicacion, setMiUbicacion] = useState<GeoPoint | null>(null);
   const [errorUbicacion, setErrorUbicacion] = useState<string | null>(null);
   const [zona, setZona] = useState<ZonaPunto[]>([]);
@@ -86,22 +86,34 @@ export function MapScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([cargarZona(true), sincronizarAhora()]);
+      // revisarRuta corre el mismo chequeo global que muestra el aviso de
+      // ruta asignada/modificada/eliminada (ShiftContext) — sin esto, el
+      // refresh de esta pantalla actualizaba el polígono visual pero no
+      // "adelantaba" la referencia que usa ese detector, pudiendo generar
+      // un aviso repetido o tardío más adelante.
+      await Promise.all([cargarZona(true), sincronizarAhora(), revisarRuta()]);
     } finally {
       setRefreshing(false);
     }
-  }, [cargarZona, sincronizarAhora]);
+  }, [cargarZona, sincronizarAhora, revisarRuta]);
 
   // Empuja el polígono de zona al mapa cada vez que cambia y centra el mapa en la ruta.
   // Reintenta si el WebView aún no cargó (window.setZona aún no existe) — antes se perdía
   // el primer setZona y quedaba el cuadrado default hasta salir/volver.
+  //
+  // El `return` temprano de abajo (cuando zona queda vacía) hacía que
+  // NUNCA se llamara a mapRef.current.setZona([]) al eliminarse la ruta
+  // desde la web — el polígono azul viejo se quedaba pintado en el mapa
+  // para siempre (hasta salir y volver a entrar, que recarga el WebView
+  // de cero). window.setZona([]) sí sabe borrar el polígono anterior
+  // (OsmMapView.tsx), solo faltaba llamarlo.
   useEffect(() => {
-    if (zona.length === 0) return;
     const aplicar = () => {
       mapRef.current?.setZona(zona);
       if (zona.length > 2) mapRef.current?.centrarEnZona?.(zona);
     };
     aplicar();
+    if (zona.length === 0) return;
     // Reintentos por si el WebView aún no está listo (carga asíncrona de Leaflet)
     const t1 = setTimeout(aplicar, 400);
     const t2 = setTimeout(aplicar, 1200);

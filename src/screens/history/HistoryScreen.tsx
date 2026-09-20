@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -26,7 +26,21 @@ const TABS: { key: TabKey; label: string }[] = [
 export function HistoryScreen() {
   const navigation = useNavigation<Nav>();
   const [tab, setTab] = useState<TabKey>('turnos');
-  const { turno, enServicio, historialTurnos } = useShift();
+  const [refreshing, setRefreshing] = useState(false);
+  const { turno, enServicio, historialTurnos, refrescarHistorial } = useShift();
+
+  // Antes esta pantalla no tenía pull-to-refresh — historialTurnos solo se
+  // llenaba con lo que el guardia cerraba en la MISMA sesión de la app, sin
+  // ninguna forma de traer el historial real del servidor de nuevo
+  // (reportado 2026-09-19: "los refresh que existen no hacen nada").
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refrescarHistorial();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refrescarHistorial]);
 
   // Lo real (esta sesión) va primero; los datos de prueba quedan abajo para no
   // dejar las listas vacías en una demo recién instalada.
@@ -59,7 +73,11 @@ export function HistoryScreen() {
         })}
       </View>
 
-      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.navy900]} tintColor={colors.navy900} />}
+      >
         {tab === 'turnos' &&
           (turnos.length === 0 ? (
             <EmptyState title="Sin turnos" message="Aún no tiene turnos registrados." />
