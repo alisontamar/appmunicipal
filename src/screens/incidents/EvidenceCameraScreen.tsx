@@ -7,6 +7,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { colors, radius, spacing } from '@/theme';
 import { Button } from '@/components';
+import { asegurarPersistencia } from '@/utils/media';
 import type { AppStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EvidenceCamera'>;
@@ -47,7 +48,7 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
     setOcupado(true);
     try {
       const foto = await camRef.current.takePictureAsync({ quality: 0.5 });
-      if (foto?.uri) volver(foto.uri);
+      if (foto?.uri) volver(asegurarPersistencia(foto.uri, 'incidentes'));
     } catch (e) {
       console.warn('[Cámara] No se pudo capturar la foto de evidencia:', e);
     } finally {
@@ -64,7 +65,7 @@ export function EvidenceCameraScreen({ navigation, route }: Props) {
     setGrabando(true);
     try {
       const video = await camRef.current.recordAsync({ maxDuration: 60 });
-      if (video?.uri) volver(video.uri);
+      if (video?.uri) volver(asegurarPersistencia(video.uri, 'incidentes'));
     } catch (e) {
       console.warn('[Cámara] No se pudo grabar el video de evidencia:', e);
     } finally {
