@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { colors, radius, spacing } from '@/theme';
 import { Button } from '@/components';
+import { asegurarPersistencia } from '@/utils/media';
 import type { AppStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'StartServiceCamera'>;
@@ -25,7 +26,10 @@ export function StartServiceCameraScreen({ navigation }: Props) {
     setCapturando(true);
     try {
       const foto = await camRef.current.takePictureAsync({ quality: 0.6 });
-      navigation.replace('StartServiceConfirm', { fotoUri: foto?.uri ?? '' });
+      // La cámara devuelve un URI de caché, que Android puede borrar antes de que
+      // haya señal. Se copia al directorio que el sistema no toca.
+      const uri = asegurarPersistencia(foto?.uri ?? '', 'selfies');
+      navigation.replace('StartServiceConfirm', { fotoUri: uri });
     } catch (e) {
       console.warn('[Cámara] No se pudo capturar la foto:', e);
     } finally {
