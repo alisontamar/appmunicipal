@@ -11,7 +11,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
       }
@@ -22,7 +22,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
       }
@@ -33,7 +33,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://gamc-backend.onrender.com/api",
+        "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
       }

@@ -21,6 +21,7 @@
     "expo-battery": "^57.0.3",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.14",
+    "expo-file-system": "~19.0.24",
     "expo-font": "~14.0.12",
     "expo-local-authentication": "~17.0.9",
     "expo-location": "~19.0.8",

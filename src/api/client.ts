@@ -25,7 +25,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const API_PORT = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_PORT) || '4001';
-const PROD_API_URL = 'https://gamc-backend.onrender.com/api';
+const PROD_API_URL = 'https://api.sistec-unifranz.com/api';
 
 function hostDesdeExpo(): string | null {
   const hostUri: string | undefined =

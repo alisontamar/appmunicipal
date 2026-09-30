@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 
 import * as checkpointsApi from '@/api/checkpoints';
@@ -25,6 +25,7 @@ import {
   type SeguimientoUbicacion,
 } from '@/utils/location';
 import { iniciarSeguimientoBackground, detenerSeguimientoBackground, setPuntoListener } from '@/utils/backgroundLocationTask';
+import { borrarCaptura, borrarCapturas, limpiarCapturasHuerfanas } from '@/utils/media';
 import {
   encolar,
   hayConexion,
@@ -50,6 +51,40 @@ export interface AvisoRuta {
   mensaje: string;
 }
 
+/**
+ * Estado real de la cola offline, para mostrarlo sin mentir. `registros` deja
+ * fuera los puntos de GPS (que se van solos y no son un registro del guardia):
+ * es el número que de verdad le importa al supervisor.
+ */
+export interface DetallePendientes {
+  total: number;
+  registros: number;
+  masAntiguoEn: string | null;
+  ultimoError: string | null;
+}
+
+const DETALLE_VACIO: DetallePendientes = {
+  total: 0,
+  registros: 0,
+  masAntiguoEn: null,
+  ultimoError: null,
+};
+
+/** Resume la cola para la UI. `listarPendientes` ya viene ordenada de más antigua a más reciente. */
+function describirPendientes(items: ItemPendiente[]): DetallePendientes {
+  if (items.length === 0) return DETALLE_VACIO;
+  const masReciente = items.reduce<ItemPendiente | null>(
+    (a, b) => (!a || (a.ultimoIntentoEn ?? '') < (b.ultimoIntentoEn ?? '') ? b : a),
+    null,
+  );
+  return {
+    total: items.length,
+    registros: items.filter((i) => i.tipo !== 'ubicacion').length,
+    masAntiguoEn: items[0]?.creadoEn ?? null,
+    ultimoError: masReciente?.ultimoError ?? null,
+  };
+}
+
 interface ShiftState {
   turno: Turno | null;
   historialTurnos: Turno[];
@@ -57,6 +92,8 @@ interface ShiftState {
   avisoUbicacion: string | null;
   checkpointPendiente: boolean;
   pendientesSincronizar: number;
+  /** Detalle de lo que sigue sin enviar — para no mostrar "Todo sincronizado" cuando no es cierto. */
+  pendientesDetalle: DetallePendientes;
   /**
    * Cambio de ruta detectado (asignada/modificada/eliminada desde la web)
    * — vive acá, no en MapScreen, para que avise sin importar en qué tab
@@ -78,7 +115,7 @@ interface ShiftState {
   registrarCheckpoint: (fotoUri: string) => Promise<Checkpoint>;
   descartarTurno: () => void;
   ultimaUbicacion: () => Promise<GeoPoint>;
-  sincronizarAhora: () => Promise<void>;
+  sincronizarAhora: (forzar?: boolean) => Promise<void>;
 }
 
 const ShiftContext = createContext<ShiftState | undefined>(undefined);
@@ -144,9 +181,13 @@ async function enviarOEncolar<T>(
 // Como reintentar cada tipo de pendiente cuando vuelve la señal.
 async function reintentarPendiente(item: ItemPendiente): Promise<void> {
   switch (item.tipo) {
-    case 'incidente':
-      await incidentesApi.registrarIncidente(item.payload as incidentesApi.NuevoIncidente);
+    case 'incidente': {
+      const p = item.payload as incidentesApi.NuevoIncidente;
+      await incidentesApi.registrarIncidente(p);
+      // Ya está en Supabase y en el servidor: la foto local ya no hace falta.
+      borrarCapturas(p.evidenciaUris ?? []);
       return;
+    }
     case 'mandado': {
       const p = item.payload as { turnoId: string; descripcion: string; ubicacion: GeoPoint };
       await mandadosApi.registrarMandado(p.turnoId, p.descripcion, p.ubicacion);
@@ -155,6 +196,7 @@ async function reintentarPendiente(item: ItemPendiente): Promise<void> {
     case 'checkpoint': {
       const p = item.payload as { turnoId: string; fotoUri: string; ubicacion: GeoPoint };
       await checkpointsApi.registrarCheckpoint(p.turnoId, p.fotoUri, p.ubicacion);
+      borrarCapturas([p.fotoUri]);
       return;
     }
     case 'sos': {
@@ -176,7 +218,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const [historialTurnos, setHistorialTurnos] = useState<Turno[]>([]);
   const [avisoUbicacion, setAvisoUbicacion] = useState<string | null>(null);
   const [checkpointPendiente, setCheckpointPendiente] = useState(false);
-  const [pendientesSincronizar, setPendientesSincronizar] = useState(0);
+  const [pendientesDetalle, setPendientesDetalle] = useState<DetallePendientes>(DETALLE_VACIO);
   const [avisoRuta, setAvisoRuta] = useState<AvisoRuta | null>(null);
   const seguimientoRef = useRef<SeguimientoUbicacion | null>(null);
   const proximoCheckpointRef = useRef<number | null>(null);
@@ -245,14 +287,21 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
 
   const refrescarPendientes = useCallback(async () => {
     const items = await listarPendientes();
-    setPendientesSincronizar(items.length);
+    setPendientesDetalle(describirPendientes(items));
   }, []);
 
-  const sincronizarAhora = useCallback(async () => {
-    const { enviados } = await sincronizarPendientes(reintentarPendiente);
-    if (enviados > 0) console.log(`[Offline] sincronizados ${enviados} pendiente(s)`);
-    await refrescarPendientes();
-  }, [refrescarPendientes]);
+  const sincronizarAhora = useCallback(
+    async (forzar = false) => {
+      // `forzar` ignora el backoff: lo usa el botón "reintentar ahora" de
+      // Perfil y el cierre de turno. Sin él, la sincronización automática (cada
+      // 30s, al volver la señal y al abrir la app) respeta el backoff de cada
+      // item, así que un registro problemático no quema batería en bucle.
+      const { enviados } = await sincronizarPendientes(reintentarPendiente, { forzar });
+      if (enviados > 0) console.log(`[Offline] sincronizados ${enviados} pendiente(s)`);
+      await refrescarPendientes();
+    },
+    [refrescarPendientes],
+  );
 
   // Al abrir la app: si ya hay señal, intenta vaciar lo que haya quedado
   // pendiente de una sesion anterior.
@@ -260,6 +309,26 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     refrescarPendientes();
     sincronizarAhora();
   }, [refrescarPendientes, sincronizarAhora]);
+
+  // Barrido de capturas huerfanas: al abrir la app se borran las fotos que ya
+  // se enviaron y a las que ningun registro pendiente apunta. Cruza contra la
+  // cola viva, asi que nunca toca una foto que todavia se necesite.
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const items = await listarPendientes();
+      if (cancelado) return;
+      const referencias = items.flatMap((i) => {
+        const p = i.payload as { evidenciaUris?: string[]; fotoUri?: string } | null;
+        return [...(p?.evidenciaUris ?? []), ...(p?.fotoUri ? [p.fotoUri] : [])];
+      });
+      const borradas = limpiarCapturasHuerfanas(referencias);
+      if (borradas > 0) console.log(`[Media] barrido: ${borradas} captura(s) huerfana(s)`);
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   // Dispara la sincronizacion automaticamente en el momento exacto en que
   // vuelve la señal (no hace falta que el guardia haga nada).
@@ -494,6 +563,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       const ubicacion = await obtenerUbicacionActual();
       const nuevo = await turnosApi.iniciarServicio(fotoUri, ubicacion);
       setTurno(nuevo);
+      // El selfie ya se subió a Supabase dentro de iniciarServicio.
+      borrarCaptura(fotoUri);
       // Manda YA el punto de arranque a /telemetry (bug reportado: "tarda
       // demasiado en aparecer en el dashboard cuando un guardia está en
       // servicio"). Antes el primer punto que llegaba a guardia_telemetria
@@ -523,8 +594,23 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     const finalizado = await turnosApi.cerrarServicio(turno, ubicacionFin);
     setTurno(finalizado);
     setHistorialTurnos((prev) => [finalizado, ...prev]);
+
+    // Última oportunidad de vaciar la cola: si el guardia cerró el turno con
+    // registros sin enviar, hay que decirlo. Antes el cierre no miraba la cola
+    // en absoluto, así que una jornada completa sin señal se perdía en silencio
+    // y el guardia quedaba como que no trabajó.
+    await sincronizarAhora(true);
+    const sinEnviar = (await listarPendientes()).filter((i) => i.tipo !== 'ubicacion');
+    if (sinEnviar.length > 0) {
+      Alert.alert(
+        'Quedan registros sin enviar',
+        `${sinEnviar.length} registro(s) siguen guardados en este teléfono y se enviarán solos apenas tengas señal. No se pierden: están a salvo acá.`,
+        [{ text: 'Entendido' }],
+      );
+    }
+
     return finalizado;
-  }, [turno, detenerSeguimiento]);
+  }, [turno, detenerSeguimiento, sincronizarAhora]);
 
   const agregarIncidente = useCallback<ShiftState['agregarIncidente']>(
     async (data) => {
@@ -604,6 +690,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
 
   const descartarTurno = useCallback(() => setTurno(null), []);
 
+  const pendientesSincronizar = pendientesDetalle.total;
+
   const value = useMemo<ShiftState>(
     () => ({
       turno,
@@ -612,6 +700,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       avisoUbicacion,
       checkpointPendiente,
       pendientesSincronizar,
+      pendientesDetalle,
       avisoRuta,
       limpiarAvisoRuta,
       revisarRuta: verificarRuta,
@@ -632,6 +721,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       avisoUbicacion,
       checkpointPendiente,
       pendientesSincronizar,
+      pendientesDetalle,
       avisoRuta,
       limpiarAvisoRuta,
       verificarRuta,

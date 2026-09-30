@@ -7,6 +7,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing } from '@/theme';
 import { Button } from '@/components';
 import { useShift } from '@/context/ShiftContext';
+import { asegurarPersistencia } from '@/utils/media';
 import type { AppStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'CheckpointCamera'>;
@@ -25,7 +26,9 @@ export function CheckpointCameraScreen({ navigation }: Props) {
     try {
       const foto = await camRef.current.takePictureAsync({ quality: 0.5 });
       if (foto?.uri) {
-        await registrarCheckpoint(foto.uri);
+        // Queda en la zona durable: si el registro se encola sin señal y el
+        // proceso muere, la foto sigue ahí para el reintento.
+        await registrarCheckpoint(asegurarPersistencia(foto.uri, 'checkpoints'));
       }
       navigation.goBack();
     } catch (e) {

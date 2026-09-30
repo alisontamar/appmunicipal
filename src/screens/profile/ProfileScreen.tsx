@@ -8,9 +8,25 @@ import { useAuth } from '@/context/AuthContext';
 import { useShift } from '@/context/ShiftContext';
 import { Avatar } from '@/components';
 
+/** Antigüedad del registro más viejo de la cola — el guardia tiene que ver que
+ *  lleva 3 h a salvo en el teléfono, no solo un número. */
+function esperaLegible(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'Esperando hace menos de 1 minuto';
+  if (min < 60) return `Esperando hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `Esperando hace ${h} h`;
+  return `Esperando hace ${Math.floor(h / 24)} día(s)`;
+}
+
 export function ProfileScreen() {
   const { guardia, signOut } = useAuth();
-  const { enServicio, pendientesSincronizar, sincronizarAhora } = useShift();
+  const { enServicio, pendientesDetalle, sincronizarAhora } = useShift();
+
+  const esperaTexto = esperaLegible(pendientesDetalle.masAntiguoEn);
 
   return (
     <ScreenContainer scroll statusBar="dark" header={<ScreenHeader title="Perfil" />}>
@@ -61,22 +77,49 @@ export function ProfileScreen() {
         <Text style={styles.sectionKicker}>SINCRONIZACIÓN</Text>
         <Card style={styles.cardClean}>
           <View style={styles.syncHeader}>
-            <View style={[styles.syncIcon, { backgroundColor: pendientesSincronizar > 0 ? '#FEF2F2' : '#ECFDF5' }]}>
-              <Ionicons name={pendientesSincronizar > 0 ? 'cloud-upload' : 'cloud-done'} size={18} color={pendientesSincronizar > 0 ? colors.danger : '#16A34A'} />
+            <View style={[styles.syncIcon, { backgroundColor: pendientesDetalle.registros > 0 ? '#FEF2F2' : '#ECFDF5' }]}>
+              <Ionicons name={pendientesDetalle.registros > 0 ? 'cloud-upload' : 'cloud-done'} size={18} color={pendientesDetalle.registros > 0 ? colors.danger : '#16A34A'} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.syncTitle}>{pendientesSincronizar > 0 ? `${pendientesSincronizar} pendiente(s)` : 'Todo sincronizado'}</Text>
-              <Text style={styles.syncSub}>{pendientesSincronizar > 0 ? 'En espera de señal' : 'Al día — sin cola offline'}</Text>
+              <Text style={styles.syncTitle}>
+                {pendientesDetalle.registros > 0
+                  ? `${pendientesDetalle.registros} registro(s) sin enviar`
+                  : pendientesDetalle.total > 0
+                    ? 'Sin registros pendientes'
+                    : 'Todo sincronizado'}
+              </Text>
+              <Text style={styles.syncSub}>
+                {pendientesDetalle.registros > 0
+                  ? 'A salvo en este teléfono'
+                  : pendientesDetalle.total > 0
+                    ? 'Solo puntos de GPS esperando señal'
+                    : 'Al día — sin cola offline'}
+              </Text>
             </View>
-            <Text style={styles.syncBig}>{String(pendientesSincronizar).padStart(2, '0')}</Text>
+            <Text style={styles.syncBig}>{String(pendientesDetalle.total).padStart(2, '0')}</Text>
           </View>
           <Text style={styles.syncNote}>
-            {pendientesSincronizar > 0
-              ? 'Hay datos guardados en el celular esperando señal. Se sincronizan solos apenas haya conexión.'
+            {pendientesDetalle.registros > 0
+              ? 'Estos registros están guardados en el celular y se envían solos apenas haya señal. Se reintentan cada vez con más calma si algo falla, pero no se descartan nunca.'
               : 'Los incidentes, tareas, checkpoints y ubicación se guardan localmente y se envían solos si te quedás sin señal.'}
           </Text>
-          {pendientesSincronizar > 0 && (
-            <Pressable onPress={sincronizarAhora} style={({ pressed }) => [styles.syncBtn, pressed && { opacity: 0.9 }]}>
+          {esperaTexto ? (
+            <View style={styles.warnBox}>
+              <Ionicons name="time-outline" size={15} color="#B45309" />
+              <Text style={styles.warnText}>{esperaTexto}</Text>
+            </View>
+          ) : null}
+          {pendientesDetalle.ultimoError ? (
+            <View style={styles.warnBox}>
+              <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
+              <Text style={styles.warnText}>Último error: {pendientesDetalle.ultimoError}</Text>
+            </View>
+          ) : null}
+          {pendientesDetalle.total > 0 && (
+            <Pressable
+              onPress={() => sincronizarAhora(true)}
+              style={({ pressed }) => [styles.syncBtn, pressed && { opacity: 0.9 }]}
+            >
               <Ionicons name="sync" size={16} color={colors.white} />
               <Text style={styles.syncBtnText}>Reintentar sincronización ahora</Text>
             </Pressable>
@@ -202,6 +245,17 @@ const styles = StyleSheet.create({
   syncSub: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
   syncBig: { fontSize: 22, fontWeight: '900', color: colors.navy900, fontFamily: 'monospace' },
   syncNote: { fontSize: 12, color: colors.textSecondary, lineHeight: 16, marginTop: 8 },
+  warnBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFFBEB',
+  },
+  warnText: { flex: 1, fontSize: 12, color: '#B45309', lineHeight: 16 },
   syncBtn: {
     flexDirection: 'row',
     alignItems: 'center',
