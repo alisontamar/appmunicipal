@@ -13,7 +13,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE",
+        "EXPO_PUBLIC_UPLOAD_URL": "https://subir-evidencias.cbbe-alisontamara-gomez-vi.workers.dev",
+        "EXPO_PUBLIC_UPLOAD_KEY": "b7723c24ad1b825559fbd2d4fa79f0501ad7dbc3b8d3e574"
       }
     },
     "preview": {
@@ -24,7 +26,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE",
+        "EXPO_PUBLIC_UPLOAD_URL": "https://subir-evidencias.cbbe-alisontamara-gomez-vi.workers.dev",
+        "EXPO_PUBLIC_UPLOAD_KEY": "b7723c24ad1b825559fbd2d4fa79f0501ad7dbc3b8d3e574"
       }
     },
     "production": {
@@ -35,7 +39,9 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.sistec-unifranz.com/api",
         "EXPO_PUBLIC_SUPABASE_URL": "https://iiaclymiuyvshzotfche.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_kbJSLxvVg0lNzf9GI2x29A_RARUhxbE",
+        "EXPO_PUBLIC_UPLOAD_URL": "https://subir-evidencias.cbbe-alisontamara-gomez-vi.workers.dev",
+        "EXPO_PUBLIC_UPLOAD_KEY": "b7723c24ad1b825559fbd2d4fa79f0501ad7dbc3b8d3e574"
       }
     }
   },

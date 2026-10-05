@@ -13,7 +13,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as checkpointsApi from '@/api/checkpoints';
 import * as incidentesApi from '@/api/incidentes';
 import * as mandadosApi from '@/api/mandados';
-import { patrullaVigente } from '@/api/patrullas';
+import { patrullaVigente, zonaDePatrulla } from '@/api/patrullas';
 import * as sosApi from '@/api/sos';
 import * as turnosApi from '@/api/turnos';
 import { useAuth } from '@/context/AuthContext';
@@ -34,9 +34,37 @@ import {
   type ItemPendiente,
 } from '@/utils/offlineQueue';
 
-const CHECKPOINT_INTERVALO_MS = 30 * 60 * 1000;
-const CHECKPOINT_GRACIA_MS = CHECKPOINT_INTERVALO_MS;
+// La foto de verificación ya no es cada 30 min fijos: salta en momentos
+// aleatorios de la ronda (entre 45 min y 2 h después de la anterior, sin tope
+// de duración de ronda) para que no sea predecible. Una ronda de 8 h queda en
+// ~4–8 verificaciones.
+const CHECKPOINT_MIN_MS = 45 * 60 * 1000;
+const CHECKPOINT_MAX_MS = 120 * 60 * 1000;
+const CHECKPOINT_GRACIA_MS = 30 * 60 * 1000;
 const CHECKPOINT_TICK_MS = 15_000;
+
+// Puesto fijo: si la zona asignada es chica (el guardia debe estar quieto en un
+// punto, no recorrer una ruta) se le pregunta al azar si sigue ahí. Pocas veces:
+// entre 1 h y 2.5 h de separación.
+const PRESENCIA_MIN_MS = 60 * 60 * 1000;
+const PRESENCIA_MAX_MS = 150 * 60 * 1000;
+const PUESTO_FIJO_MAX_LADO_M = 250;
+
+const aleatorioEntre = (min: number, max: number) => min + Math.random() * (max - min);
+const proximoCheckpointEn = () => Date.now() + aleatorioEntre(CHECKPOINT_MIN_MS, CHECKPOINT_MAX_MS);
+const proximaPresenciaEn = () => Date.now() + aleatorioEntre(PRESENCIA_MIN_MS, PRESENCIA_MAX_MS);
+
+/** True si la zona cabe en un cuadrado chico: la "ruta" es quedarse en un solo lugar. */
+function esPuestoFijo(p: Awaited<ReturnType<typeof patrullaVigente>>): boolean {
+  const zona = zonaDePatrulla(p);
+  if (zona.length < 3) return false;
+  const lats = zona.map((z) => z.latitud);
+  const lngs = zona.map((z) => z.longitud);
+  const base = { latitud: Math.min(...lats), longitud: Math.min(...lngs), timestamp: '' };
+  const alto = distanciaMetros(base, { ...base, latitud: Math.max(...lats) });
+  const ancho = distanciaMetros(base, { ...base, longitud: Math.max(...lngs) });
+  return Math.max(alto, ancho) <= PUESTO_FIJO_MAX_LADO_M;
+}
 
 // Umbral anti-ruido del GPS: entre dos lecturas seguidas, un desplazamiento
 // menor a esto casi siempre es deriva del GPS (de pie el punto "baila" varios
@@ -91,6 +119,9 @@ interface ShiftState {
   enServicio: boolean;
   avisoUbicacion: string | null;
   checkpointPendiente: boolean;
+  /** Mensaje aleatorio "¿sigues en tu puesto?" (solo si la ruta es un punto fijo). */
+  presenciaPendiente: boolean;
+  confirmarPresencia: () => Promise<void>;
   pendientesSincronizar: number;
   /** Detalle de lo que sigue sin enviar — para no mostrar "Todo sincronizado" cuando no es cierto. */
   pendientesDetalle: DetallePendientes;
@@ -218,11 +249,14 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const [historialTurnos, setHistorialTurnos] = useState<Turno[]>([]);
   const [avisoUbicacion, setAvisoUbicacion] = useState<string | null>(null);
   const [checkpointPendiente, setCheckpointPendiente] = useState(false);
+  const [presenciaPendiente, setPresenciaPendiente] = useState(false);
   const [pendientesDetalle, setPendientesDetalle] = useState<DetallePendientes>(DETALLE_VACIO);
   const [avisoRuta, setAvisoRuta] = useState<AvisoRuta | null>(null);
   const seguimientoRef = useRef<SeguimientoUbicacion | null>(null);
   const proximoCheckpointRef = useRef<number | null>(null);
   const checkpointVenceRef = useRef<number | null>(null);
+  const proximaPresenciaRef = useRef<number | null>(null);
+  const puestoFijoRef = useRef(false);
   const conectadoAntesRef = useRef<boolean | null>(null);
   const rehidratadoRef = useRef<string | null>(null);
   // null = todavía no se hizo la primera lectura (no avisar en el arranque
@@ -242,6 +276,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return; // sin señal / error transitorio — no tratarlo como "ruta eliminada"
     }
+    puestoFijoRef.current = esPuestoFijo(p);
     const idActual = p?.id ?? null;
     const firmaActual = p ? `${p.rutaNombre ?? p.nombre ?? ''}|${JSON.stringify(p.trazado)}|${JSON.stringify(p.poligonoGeojson)}` : '';
     const anterior = rutaFirmaRef.current;
@@ -449,6 +484,15 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         checkpointVenceRef.current = ahora + CHECKPOINT_GRACIA_MS;
       }
 
+      if (
+        puestoFijoRef.current &&
+        proximaPresenciaRef.current !== null &&
+        ahora >= proximaPresenciaRef.current
+      ) {
+        setPresenciaPendiente(true);
+        proximaPresenciaRef.current = proximaPresenciaEn();
+      }
+
       if (checkpointVenceRef.current !== null && ahora >= checkpointVenceRef.current) {
         const perdido: Checkpoint = {
           id: `chk-${ahora}`,
@@ -461,7 +505,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         );
         setCheckpointPendiente(false);
         checkpointVenceRef.current = null;
-        proximoCheckpointRef.current = ahora + CHECKPOINT_INTERVALO_MS;
+        proximoCheckpointRef.current = proximoCheckpointEn();
       }
     }, CHECKPOINT_TICK_MS);
 
@@ -521,7 +565,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         });
         if (aplicado) {
           iniciarSeguimiento(restaurado.id);
-          proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
+          proximoCheckpointRef.current = proximoCheckpointEn();
+          proximaPresenciaRef.current = proximaPresenciaEn();
           checkpointVenceRef.current = null;
           setCheckpointPendiente(false);
         }
@@ -576,7 +621,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       // — mandarla de una evita esa espera extra.
       enviarUbicacionOEncolar(nuevo.id, ubicacion);
       iniciarSeguimiento(nuevo.id);
-      proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
+      proximoCheckpointRef.current = proximoCheckpointEn();
+      proximaPresenciaRef.current = proximaPresenciaEn();
       checkpointVenceRef.current = null;
       setCheckpointPendiente(false);
       return nuevo;
@@ -588,8 +634,10 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     if (!turno) throw new Error('No hay turno en curso');
     detenerSeguimiento();
     proximoCheckpointRef.current = null;
+    proximaPresenciaRef.current = null;
     checkpointVenceRef.current = null;
     setCheckpointPendiente(false);
+    setPresenciaPendiente(false);
     const ubicacionFin = await obtenerUbicacionActual();
     const finalizado = await turnosApi.cerrarServicio(turno, ubicacionFin);
     setTurno(finalizado);
@@ -682,11 +730,23 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       setTurno((prev) => (prev ? { ...prev, checkpoints: [chk, ...prev.checkpoints] } : prev));
       setCheckpointPendiente(false);
       checkpointVenceRef.current = null;
-      proximoCheckpointRef.current = Date.now() + CHECKPOINT_INTERVALO_MS;
+      proximoCheckpointRef.current = proximoCheckpointEn();
       return chk;
     },
     [turno, refrescarPendientes],
   );
+
+  // El guardia responde "sigo aquí": se manda un punto GPS fresco, que además
+  // le sirve al centro de monitoreo como prueba de que está en el puesto.
+  const confirmarPresencia = useCallback(async () => {
+    setPresenciaPendiente(false);
+    if (!turno) return;
+    try {
+      enviarUbicacionOEncolar(turno.id, await obtenerUbicacionActual());
+    } catch (e) {
+      console.warn('[Shift] no se pudo enviar la confirmación de presencia:', e);
+    }
+  }, [turno, enviarUbicacionOEncolar]);
 
   const descartarTurno = useCallback(() => setTurno(null), []);
 
@@ -699,6 +759,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       enServicio: turno?.estado === 'en_servicio',
       avisoUbicacion,
       checkpointPendiente,
+      presenciaPendiente,
+      confirmarPresencia,
       pendientesSincronizar,
       pendientesDetalle,
       avisoRuta,
@@ -720,6 +782,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       historialTurnos,
       avisoUbicacion,
       checkpointPendiente,
+      presenciaPendiente,
+      confirmarPresencia,
       pendientesSincronizar,
       pendientesDetalle,
       avisoRuta,

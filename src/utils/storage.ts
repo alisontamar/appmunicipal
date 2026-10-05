@@ -1,17 +1,20 @@
 /**
- * Subida directa de fotos/videos al bucket de Supabase Storage "evidencias".
+ * Subida de fotos/videos de evidencia a Cloudflare R2 (bucket "evidencias").
  *
- * El backend Express no tiene (todavia) un endpoint propio de subida de archivos,
- * así que la app sube el archivo directo a Supabase Storage con la publishable key
- * del proyecto y le pasa al backend la URL pública resultante (los campos
- * `selfieInicioUrl` / `evidencias[].url` ya esperaban una URL, antes recibian la
- * ruta local del celular). El bucket es público solo para lectura; el INSERT
- * anónimo está acotado por policy a las carpetas `selfies/`, `incidentes/` y
- * `checkpoints/` (ver migración `crear_bucket_evidencias`).
+ * La app no tiene llaves de R2: le manda el archivo a un Worker de Cloudflare
+ * (subir-evidencias) que valida la clave compartida, el tipo, el tamano y la
+ * carpeta, lo guarda en el bucket y responde con la URL publica. Al backend
+ * solo se le pasa esa URL (campos `selfieInicioUrl` / `evidencias[].url`).
+ *
+ * Las fotos viejas siguen en Supabase con sus URLs; solo las nuevas van a R2.
+ *
+ * Los valores tienen fallback en codigo porque en builds standalone las
+ * variables EXPO_PUBLIC_* a veces no llegan al bundle (ver api/client.ts).
  */
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const BUCKET = 'evidencias';
+const UPLOAD_URL =
+  process.env.EXPO_PUBLIC_UPLOAD_URL || 'https://subir-evidencias.cbbe-alisontamara-gomez-vi.workers.dev';
+const UPLOAD_KEY =
+  process.env.EXPO_PUBLIC_UPLOAD_KEY || 'b7723c24ad1b825559fbd2d4fa79f0501ad7dbc3b8d3e574';
 
 export type CarpetaEvidencia = 'selfies' | 'incidentes' | 'checkpoints';
 
@@ -22,34 +25,27 @@ function extensionDe(uri: string): string {
 }
 
 /**
- * Sube un archivo local (URI de expo-camera) a Storage y devuelve su URL pública.
- * Si no hay configuración de Supabase (o falla la subida), propaga el error para
- * que quien llama decida cómo manejarlo (p. ej. reintentar u ofline-queue).
+ * Sube un archivo local (URI de expo-camera) a R2 y devuelve su URL publica.
+ * Si falla la subida, propaga el error para que quien llama decida como
+ * manejarlo (p. ej. reintentar u offline-queue).
  */
 export async function subirEvidencia(localUri: string, carpeta: CarpetaEvidencia): Promise<string> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error('Supabase no está configurado (falta EXPO_PUBLIC_SUPABASE_URL/ANON_KEY).');
-  }
-
   const respuestaArchivo = await fetch(localUri);
   const blob = await respuestaArchivo.blob();
-  const nombre = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionDe(localUri)}`;
-  const path = `${carpeta}/${nombre}`;
+  const tipo = blob.type || `image/${extensionDe(localUri) === 'png' ? 'png' : 'jpeg'}`;
 
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
+  const res = await fetch(`${UPLOAD_URL}/?carpeta=${carpeta}`, {
     method: 'POST',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': blob.type || 'application/octet-stream',
-    },
+    headers: { 'x-upload-key': UPLOAD_KEY, 'Content-Type': tipo },
     body: blob,
   });
 
   if (!res.ok) {
     const texto = await res.text().catch(() => '');
-    throw new Error(`No se pudo subir el archivo a Storage (${res.status}): ${texto}`);
+    throw new Error(`No se pudo subir el archivo (${res.status}): ${texto}`);
   }
 
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+  const { url } = (await res.json()) as { url?: string };
+  if (!url) throw new Error('El servidor de archivos no devolvio la URL.');
+  return url;
 }
