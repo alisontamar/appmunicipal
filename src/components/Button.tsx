@@ -36,7 +36,7 @@ const bg: Record<Variant, string> = {
 
 const fg: Record<Variant, string> = {
   primary: colors.white,
-  secondary: colors.navy900,
+  secondary: colors.white,
   outline: colors.navy900,
   danger: colors.white,
 };

@@ -10,7 +10,7 @@ function initials(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-/** Foto del guardia; si no hay `uri`, muestra las iniciales sobre azul institucional. */
+/** Foto del guardia; si no hay `uri`, muestra las iniciales sobre morado institucional. */
 export function Avatar({ name, uri, size = 56 }: { name: string; uri?: string; size?: number }) {
   const dim = { width: size, height: size, borderRadius: size / 2 };
 

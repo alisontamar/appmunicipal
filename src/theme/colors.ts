@@ -1,31 +1,36 @@
 /**
- * Paleta institucional G.A.M. Cochabamba - Direccion de Seguridad Ciudadana.
- * Colores tomados del escudo oficial (assets/escudo.webp): negro cálido + dorado
- * bronce. Reemplaza el azul/amarillo anterior.
+ * Paleta G.A.M. Cochabamba - Direccion de Seguridad Ciudadana.
+ * Morado + rosa, en la linea visual de las apps de la alcaldia (Innova Cochabamba),
+ * conservando el escudo institucional.
  *
- * Nota: las claves `navy*` se conservan por compatibilidad con el código
- * existente, pero ahora son tonos de negro cálido, no azules.
+ * Nota: las claves `navy*` y `gold*` se conservan por compatibilidad con el codigo
+ * existente, pero ahora son tonos de morado (navy) y rosa de acento (gold).
  */
 export const colors = {
-  // Negro cálido institucional (fondo del escudo)
-  navy900: '#1C1A19', // headers, navegacion, splash, login
-  navy800: '#262220',
-  navy700: '#332E2A', // paneles, tarjetas sobre fondo oscuro
+  // Morado institucional
+  brand: '#6B559F', // header, barra de estado
+  navy900: '#4D3B86', // botones primarios, tab bar, textos de titulo, camara
+  navy800: '#5A4794',
+  navy700: '#6B559F', // paneles, tarjetas sobre fondo oscuro
 
-  // Acento dorado bronce (linework del escudo, iconos, detalles)
-  gold: '#C0906C',
-  goldLight: '#D4AF8F',
+  // Acento rosa (la "V" de Innova)
+  gold: '#E8567F',
+  goldLight: '#F28BA6',
+
+  // Tintes claros del morado (circulos de iconos, chips)
+  lilac: '#EFEAF8',
+  lilacStrong: '#E1D9F2',
 
   // Texto sobre fondo oscuro
   white: '#FFFFFF',
   grayLight: '#E5E7EB',
 
   // Fondo claro de pantallas
-  background: '#F3F4F6',
+  background: '#F5F2FA',
   surface: '#FFFFFF',
-  border: '#D1D5DB',
-  textPrimary: '#111827',
-  textSecondary: '#6B7280',
+  border: '#DDD6EC',
+  textPrimary: '#1F1A2E',
+  textSecondary: '#6B6880',
 
   // Semaforo de niveles de riesgo
   riskVeryHigh: '#E53935',

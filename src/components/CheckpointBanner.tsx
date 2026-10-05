@@ -42,5 +42,5 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radius.md,
     borderBottomRightRadius: radius.md,
   },
-  texto: { flex: 1, color: colors.navy900, fontWeight: '700', fontSize: 13 },
+  texto: { flex: 1, color: colors.white, fontWeight: '700', fontSize: 13 },
 });
