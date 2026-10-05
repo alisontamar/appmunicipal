@@ -9,13 +9,14 @@ import { ProfileScreen } from '@/screens/profile/ProfileScreen';
 import { FloatingTabBar } from './FloatingTabBar';
 import { SosButton } from '@/components/SosButton';
 import { CheckpointBanner } from '@/components/CheckpointBanner';
+import { TutorialProvider } from '@/tutorial/Tutorial';
 import type { TabsParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabsParamList>();
 
 export function TabsNavigator() {
   return (
-    <>
+    <TutorialProvider>
       <Tab.Navigator
         tabBar={(props) => <FloatingTabBar {...props} />}
         screenOptions={{
@@ -30,6 +31,7 @@ export function TabsNavigator() {
       </Tab.Navigator>
       <CheckpointBanner />
       <SosButton />
-    </>
+    </TutorialProvider>
   );
 }
+

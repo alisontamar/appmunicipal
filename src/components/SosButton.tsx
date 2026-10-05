@@ -6,6 +6,7 @@ import { colors, radius } from '@/theme';
 import { useShift } from '@/context/ShiftContext';
 import { autenticarConBiometria, biometriaDisponible } from '@/utils/biometria';
 import { useTabBarHeight } from '@/navigation/tabBarMetrics';
+import { CopilotStep, Walkthroughable } from '@/tutorial/Tutorial';
 
 // Separación entre el borde superior del tab bar y el borde inferior del botón.
 const GAP_SOBRE_TAB_BAR = 20;
@@ -120,10 +121,15 @@ export function SosButton() {
 
   return (
     <>
+      <CopilotStep
+        order={7}
+        name="sos"
+        text="Botón SOS: en una emergencia púlsalo y el centro de monitoreo recibe tu ubicación al instante."
+      >
+        <Walkthroughable style={[styles.sosWrap, { bottom: tabBarHeight + GAP_SOBRE_TAB_BAR }]}>
       <Pressable
         style={({ pressed }) => [
           styles.boton,
-          { bottom: tabBarHeight + GAP_SOBRE_TAB_BAR },
           isPulsado && styles.botonActivo,
           pressed && styles.presionado,
         ]}
@@ -150,6 +156,8 @@ export function SosButton() {
           </>
         )}
       </Pressable>
+        </Walkthroughable>
+      </CopilotStep>
 
       <Modal visible={showConfirm} transparent animationType="fade" onRequestClose={() => setShowConfirm(false)}>
         <View style={styles.modalBackdrop}>
@@ -182,9 +190,8 @@ export function SosButton() {
 }
 
 const styles = StyleSheet.create({
+  sosWrap: { position: 'absolute', right: 20, width: 64, height: 64 },
   boton: {
-    position: 'absolute',
-    right: 20,
     backgroundColor: colors.danger,
     width: 64,
     height: 64,

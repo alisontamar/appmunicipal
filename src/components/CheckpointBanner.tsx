@@ -13,8 +13,17 @@ type Nav = NativeStackNavigationProp<AppStackParamList>;
 // Se muestra flotando sobre cualquier pantalla mientras haya una
 // verificacion de ronda pendiente (ver ShiftContext / CHECKPOINT_INTERVALO_MS).
 export function CheckpointBanner() {
-  const { checkpointPendiente } = useShift();
+  const { checkpointPendiente, presenciaPendiente, confirmarPresencia } = useShift();
   const navigation = useNavigation<Nav>();
+
+  if (!checkpointPendiente && presenciaPendiente) {
+    return (
+      <Pressable style={[styles.banner, styles.bannerPresencia]} onPress={confirmarPresencia}>
+        <Ionicons name="location" size={20} color={colors.white} />
+        <Text style={styles.texto}>¿Sigues ahí? Toca para confirmar.</Text>
+      </Pressable>
+    );
+  }
 
   if (!checkpointPendiente) return null;
 
@@ -42,5 +51,6 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radius.md,
     borderBottomRightRadius: radius.md,
   },
+  bannerPresencia: { backgroundColor: colors.brand },
   texto: { flex: 1, color: colors.white, fontWeight: '700', fontSize: 13 },
 });

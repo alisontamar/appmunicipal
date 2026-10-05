@@ -13,6 +13,14 @@ import { useRelojEnVivo } from '@/hooks/useRelojEnVivo';
 import { formatDistancia, formatDuracion, formatHora } from '@/utils/format';
 import type { AppStackParamList } from '@/navigation/types';
 import * as incidentesApi from '@/api/incidentes';
+import {
+  CopilotStep,
+  Walkthroughable,
+  useCopilot,
+  marcarTutorialVisto,
+  tutorialVisto,
+  type FaseTutorial,
+} from '@/tutorial/Tutorial';
 
 type Nav = NativeStackNavigationProp<AppStackParamList>;
 
@@ -23,6 +31,38 @@ export function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [incidentesReales, setIncidentesReales] = useState<number | null>(null);
   useRelojEnVivo(1000);
+  const { start, copilotEvents } = useCopilot();
+  const fase: FaseTutorial = enServicio ? 'servicio' : 'inicio';
+
+  // Mini tutorial de primer uso: una fase al abrir Inicio sin servicio y otra
+  // la primera vez que el guardia entra en servicio (ahí aparecen incidente,
+  // tarea, cerrar y el SOS). Cada una se muestra una sola vez.
+  // `start` cambia de identidad cada vez que se registra un paso; si estuviera en
+  // las dependencias reiniciaba el tutorial al pulsar "Siguiente". Se guarda en
+  // un ref y se lanza una sola vez por fase.
+  const startRef = React.useRef(start);
+  startRef.current = start;
+  const faseLanzadaRef = React.useRef<FaseTutorial | null>(null);
+  React.useEffect(() => {
+    if (faseLanzadaRef.current === fase) return;
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      if (cancelado || (await tutorialVisto(fase)) || cancelado) return;
+      faseLanzadaRef.current = fase;
+      startRef.current();
+    }, 900);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [fase]);
+  React.useEffect(() => {
+    const alTerminar = () => marcarTutorialVisto(fase);
+    copilotEvents.on('stop', alTerminar);
+    return () => {
+      copilotEvents.off('stop', alTerminar);
+    };
+  }, [copilotEvents, fase]);
   const recargarIncidentes = useCallback(async () => {
     try {
       const todos = await incidentesApi.listarIncidentes();
@@ -114,19 +154,19 @@ export function HomeScreen() {
       <View style={styles.menu}>
         {enServicio ? (
           <>
-            <MenuItem icon="alert" label="Registrar incidente" onPress={() => navigation.navigate('RegisterIncident')} accent />
-            <MenuItem icon="clipboard-outline" label="Registrar tarea" onPress={() => navigation.navigate('RegisterErrand')} />
-            <MenuItem icon="map-outline" label="Mapa de ronda" onPress={() => irATab('MapTab')} />
-            <MenuItem icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
-            <MenuItem icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
-            <MenuItem icon="stop-circle-outline" label="Cerrar servicio" onPress={() => navigation.navigate('CloseServiceSummary')} />
+            <MenuItem step={1} tip="Aquí reportas cualquier incidente con fotos de evidencia." icon="alert" label="Registrar incidente" onPress={() => navigation.navigate('RegisterIncident')} accent />
+            <MenuItem step={2} tip="Anota los mandados o tareas que te encargan durante la ronda." icon="clipboard-outline" label="Registrar tarea" onPress={() => navigation.navigate('RegisterErrand')} />
+            <MenuItem step={3} tip="Mira tu zona asignada y tu recorrido en el mapa." icon="map-outline" label="Mapa de ronda" onPress={() => irATab('MapTab')} />
+            <MenuItem step={4} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
+            <MenuItem step={5} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
+            <MenuItem step={6} tip="Al terminar tu ronda, ciérrala desde aquí." icon="stop-circle-outline" label="Cerrar servicio" onPress={() => navigation.navigate('CloseServiceSummary')} />
           </>
         ) : (
           <>
-            <MenuItem icon="play" label="Iniciar servicio" onPress={() => navigation.navigate('StartServiceCamera')} accent />
-            <MenuItem icon="map-outline" label="Mapa" onPress={() => irATab('MapTab')} />
-            <MenuItem icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
-            <MenuItem icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
+            <MenuItem step={1} tip="¡Empieza aquí! Toca para iniciar tu ronda: se registra con foto, GPS y hora." icon="play" label="Iniciar servicio" onPress={() => navigation.navigate('StartServiceCamera')} accent />
+            <MenuItem step={3} tip="Mira tu zona asignada en el mapa." icon="map-outline" label="Mapa" onPress={() => irATab('MapTab')} />
+            <MenuItem step={4} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
+            <MenuItem step={5} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
           </>
         )}
       </View>
@@ -146,19 +186,25 @@ function MenuItem({
   icon,
   label,
   onPress,
+  step,
+  tip,
   accent = false,
 }: {
+  step: number;
+  tip: string;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
   accent?: boolean;
 }) {
   return (
+    <CopilotStep order={step} name={`menu-${label}`} text={tip}>
+    <Walkthroughable style={styles.menuItem}>
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.menuInner, pressed && styles.pressed]}
     >
       <View style={[styles.menuCircle, accent && styles.menuCircleAccent]}>
         <Ionicons name={icon} size={26} color={accent ? colors.white : colors.brand} />
@@ -167,6 +213,8 @@ function MenuItem({
         {label}
       </Text>
     </Pressable>
+    </Walkthroughable>
+    </CopilotStep>
   );
 }
 
@@ -229,7 +277,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     paddingHorizontal: spacing.sm,
   },
-  menuItem: { width: '33.333%', alignItems: 'center', paddingHorizontal: 4, gap: spacing.sm },
+  menuItem: { width: '33.333%', paddingHorizontal: 4 },
+  menuInner: { alignItems: 'center', gap: spacing.sm },
   menuCircle: {
     width: 64,
     height: 64,
