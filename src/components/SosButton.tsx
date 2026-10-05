@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   texto: { color: colors.white, fontWeight: '800', fontSize: 10, marginTop: 1, letterSpacing: 0.5 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(28,26,25,0.55)',
+    backgroundColor: 'rgba(31,26,46,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,

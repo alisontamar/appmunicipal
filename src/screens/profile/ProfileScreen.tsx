@@ -45,13 +45,13 @@ export function ProfileScreen() {
             {guardia?.nombre ?? 'Guardia Municipal'}
           </Text>
           <View style={styles.rolePill}>
-            <Ionicons name="shield-checkmark" size={12} color={colors.navy900} />
+            <Ionicons name="shield-checkmark" size={12} color={colors.brand} />
             <Text style={styles.roleText}>{(guardia?.rol ?? 'Guardia').toUpperCase()}</Text>
           </View>
           <Text style={styles.distrito}>{guardia?.distrito ?? 'Sin distrito asignado'}</Text>
           <View style={styles.heroMeta}>
             <View style={styles.metaChip}>
-              <Ionicons name="person" size={12} color={colors.gold} />
+              <Ionicons name="person" size={12} color={colors.brand} />
               <Text style={styles.metaChipText}>{guardia?.usuario ?? '-'}</Text>
             </View>
             <View style={[styles.metaChip, { backgroundColor: enServicio ? '#ECFDF5' : '#F3F4F6' }]}>
@@ -145,9 +145,9 @@ export function ProfileScreen() {
 
 function Row({ icon, label, value, last }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; last?: boolean }) {
   return (
-    <View style={[styles.row, !last && { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }]}>
+    <View style={[styles.row, !last && { borderBottomWidth: 1, borderBottomColor: colors.lilac }]}>
       <View style={styles.rowIcon}>
-        <Ionicons name={icon} size={14} color={colors.gold} />
+        <Ionicons name={icon} size={14} color={colors.brand} />
       </View>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue} numberOfLines={1}>
@@ -169,22 +169,22 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: spacing.lg,
   },
-  heroGold: { height: 4, backgroundColor: colors.gold },
-  heroContent: { alignItems: 'center', padding: spacing.lg, gap: 8 },
-  avatarStack: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  heroGold: { height: 56, backgroundColor: colors.brand },
+  // El avatar sube sobre la franja morada (marginTop negativo)
+  heroContent: { alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: 8, marginTop: -44 },
+  avatarStack: { width: 94, height: 94, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   avatarGlow: {
     position: 'absolute',
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.gold,
-    opacity: 0.15,
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+    backgroundColor: colors.surface,
   },
   avatarRing: {
-    borderRadius: 42,
+    borderRadius: 47,
     padding: 3,
     backgroundColor: colors.surface,
-    shadowColor: colors.gold,
+    shadowColor: colors.navy900,
     shadowOpacity: 0.25,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(192,144,108,0.14)',
+    backgroundColor: colors.lilac,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.lilac,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
@@ -232,13 +232,13 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(192,144,108,0.12)',
+    backgroundColor: colors.lilac,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowLabel: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   rowValue: { fontSize: 13, fontWeight: '800', color: colors.navy900, maxWidth: 160, textAlign: 'right' },
-  divider: { height: 1, backgroundColor: '#F3F4F6' },
+  divider: { height: 1, backgroundColor: colors.lilac },
   syncHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
   syncIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   syncTitle: { fontSize: 14, fontWeight: '800', color: colors.navy900 },

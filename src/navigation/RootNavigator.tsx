@@ -10,9 +10,9 @@ const navTheme: Theme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: colors.navy900,
+    primary: colors.brand,
     background: colors.background,
-    card: colors.navy900,
+    card: colors.brand,
     text: colors.white,
     border: colors.border,
   },

@@ -134,7 +134,6 @@ export function LoginScreen({ navigation }: Props) {
               <View style={styles.form}>
                 <TextField
                   label="Usuario"
-                  onDark
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={usuario}
@@ -147,7 +146,6 @@ export function LoginScreen({ navigation }: Props) {
                 <TextField
                   ref={passwordRef}
                   label="Contraseña"
-                  onDark
                   secureTextEntry
                   value={password}
                   onChangeText={setPassword}
@@ -170,18 +168,22 @@ export function LoginScreen({ navigation }: Props) {
 
                 {mostrarHuella && (
                   <Pressable style={styles.huella} onPress={onSubmitBiometria} hitSlop={8}>
-                    <Ionicons name="finger-print" size={22} color={colors.gold} />
+                    <Ionicons name="finger-print" size={22} color={colors.brand} />
                     <Text style={styles.huellaText}>Ingresar con huella / Face ID</Text>
                   </Pressable>
                 )}
 
-                <Pressable
-                  style={styles.forgot}
-                  onPress={() => navigation.navigate('ForgotPassword')}
-                  hitSlop={8}
-                >
-                  <Text style={styles.forgotText}>¿Olvidó su contraseña?</Text>
-                </Pressable>
+                {/* Oculto mientras el backend nuevo no tenga endpoint de reset de contraseña
+                    (antes usaba una Edge Function de Supabase). Cambiar a true al tenerlo. */}
+                {false && (
+                  <Pressable
+                    style={styles.forgot}
+                    onPress={() => navigation.navigate('ForgotPassword')}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.forgotText}>¿Olvidó su contraseña?</Text>
+                  </Pressable>
+                )}
               </View>
 
               <Text style={styles.footer}>
@@ -196,7 +198,7 @@ export function LoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.navy900 },
+  root: { flex: 1, backgroundColor: colors.white },
   flex: { flex: 1 },
   scroll: {
     flex: 1,
@@ -214,9 +216,9 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   headline: { marginBottom: spacing.xxl },
-  title: { color: colors.white, fontSize: 40, fontWeight: '800', lineHeight: 44 },
+  title: { color: colors.navy900, fontSize: 40, fontWeight: '800', lineHeight: 44 },
   subtitle: {
-    color: colors.grayLight,
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 19,
     marginTop: spacing.md,
@@ -231,9 +233,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     padding: spacing.sm,
   },
-  huellaText: { color: colors.gold, fontWeight: '700', fontSize: 15 },
+  huellaText: { color: colors.brand, fontWeight: '700', fontSize: 15 },
   forgot: { alignSelf: 'center', marginTop: spacing.sm, padding: spacing.sm },
-  forgotText: { color: colors.gold, fontWeight: '700', fontSize: 15 },
+  forgotText: { color: colors.brand, fontWeight: '700', fontSize: 15 },
   footer: {
     ...typography.caption,
     color: colors.textSecondary,

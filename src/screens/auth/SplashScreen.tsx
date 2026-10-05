@@ -36,16 +36,16 @@ export function SplashScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.navy900,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
   },
   escudo: { width: 160, height: 160 },
-  title: { color: colors.white, fontSize: 34, fontWeight: '800', marginTop: spacing.lg },
-  subtitle: { color: colors.white, fontSize: 16, fontWeight: '600', marginTop: 2 },
+  title: { color: colors.navy900, fontSize: 34, fontWeight: '800', marginTop: spacing.lg },
+  subtitle: { color: colors.brand, fontSize: 16, fontWeight: '600', marginTop: 2 },
   org: {
-    color: colors.grayLight,
+    color: colors.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: spacing.sm,
