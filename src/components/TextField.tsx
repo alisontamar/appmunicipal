@@ -52,6 +52,18 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
             style,
           ]}
           secureTextEntry={esPassword ? oculto : secureTextEntry}
+          {...(esPassword
+            ? {
+                // En un campo de contrasena el teclado no debe alterar lo que se
+                // escribe: si autocapitaliza o autocorrige, la clave deja de
+                // coincidir con el hash de la BD y el login falla.
+                autoCapitalize: 'none' as const,
+                autoCorrect: false,
+                spellCheck: false,
+                autoComplete: 'off' as const,
+                importantForAutofill: 'no' as const,
+              }
+            : null)}
           {...rest}
         />
         {esPassword && (

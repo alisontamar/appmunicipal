@@ -47,7 +47,16 @@ function mapGuardia(d: GuardiaDTO): Guardia {
   };
 }
 
-async function persistirSesion(s: SesionDTO): Promise<LoginResult> {
+async function persistirSesion(s: SesionDTO | null | undefined): Promise<LoginResult> {
+  // Sin esta validacion, una respuesta vacia del servidor terminaba en
+  // "Cannot read property accessToken of null" al tocar s.accessToken.
+  if (!s?.accessToken || !s?.refreshToken || !s?.guardia) {
+    throw new ApiError(
+      'El servidor respondió sin una sesión válida. Intente nuevamente.',
+      'BAD_RESPONSE',
+      0,
+    );
+  }
   await guardarTokens(s.accessToken, s.refreshToken);
   return { token: s.accessToken, guardia: mapGuardia(s.guardia) };
 }

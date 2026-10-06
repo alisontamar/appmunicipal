@@ -188,14 +188,20 @@ export async function request<T>(path: string, init: RequestInit = {}, _reintent
     throw new ApiError('No se pudo conectar con el servidor.', 'NETWORK_ERROR', 0, e);
   }
 
-  if (res.status === 401 && !_reintento) {
+  // El body se lee una sola vez y ANTES de evaluar el 401: si no, el mensaje real
+  // del backend (INVALID_CREDENTIALS, ACCOUNT_DISABLED...) se pierde.
+  const body = await parseBody(res);
+
+  // Solo es "sesion expirada" si veniamos con una sesion (login fallido no lo es:
+  // es usuario/contrasena incorrectos). Antes esto mascaraba todo 401 del login
+  // como "La sesion expiro", por eso el guardia veia ese texto al escribir mal
+  // la contrasena.
+  if (res.status === 401 && !_reintento && accessToken) {
     const renovado = await refrescarSesion();
     if (renovado) return request<T>(path, init, true);
     await limpiarTokens();
     throw new SesionExpiradaError();
   }
-
-  const body = await parseBody(res);
 
   if (!res.ok) {
     const err = (body?.error ?? {}) as { code?: string; message?: string; details?: unknown };
@@ -204,6 +210,17 @@ export async function request<T>(path: string, init: RequestInit = {}, _reintent
       err.code ?? 'HTTP_ERROR',
       res.status,
       err.details,
+    );
+  }
+
+  // 200 pero sin envelope JSON: antes se devolvia null y reventaba aguas abajo
+  // con "Cannot read property accessToken of null". Casi siempre significa que la
+  // URL de la API apunta a otro host (o a una pagina HTML de cPanel).
+  if (body === null || typeof body !== 'object') {
+    throw new ApiError(
+      `El servidor respondió sin datos válidos (HTTP ${res.status}). URL de la API: ${API_BASE_URL}`,
+      'BAD_RESPONSE',
+      res.status,
     );
   }
 
