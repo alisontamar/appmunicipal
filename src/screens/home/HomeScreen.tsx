@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, View, Pressable } from 'react-native';
+import { StyleSheet, ScrollView, Text, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -42,6 +42,8 @@ export function HomeScreen() {
   // un ref y se lanza una sola vez por fase.
   const startRef = React.useRef(start);
   startRef.current = start;
+  const scrollRef = React.useRef<ScrollView>(null);
+  const menuYRef = React.useRef(0);
   const faseLanzadaRef = React.useRef<FaseTutorial | null>(null);
   React.useEffect(() => {
     if (faseLanzadaRef.current === fase) return;
@@ -49,7 +51,21 @@ export function HomeScreen() {
     const t = setTimeout(async () => {
       if (cancelado || (await tutorialVisto(fase)) || cancelado) return;
       faseLanzadaRef.current = fase;
-      startRef.current();
+      // Los items del menú están dentro de un ScrollView y `walkthroughable` los
+      // mide en coordenadas de ventana: los que caen bajo el fold se resaltaban
+      // fuera de pantalla. Se sube el scroll para que el menú entero entre en
+      // vista antes de que el tour mida.
+      //
+      // NO se le pasa el ScrollView a `start()` a propósito: eso hace que la
+      // librería mida cada paso contra ese scroll, y el paso del SOS vive fuera
+      // de él (es un botón absoluto sobre el tab bar). Medirlo contra un
+      // ancestro que no lo contiene dispara
+      // "ref.measureLayout must be called with a ref to a native component".
+      const y = Math.max(0, menuYRef.current - 8);
+      scrollRef.current?.scrollTo({ y, animated: false });
+      setTimeout(() => {
+        if (!cancelado) startRef.current();
+      }, 250);
     }, 900);
     return () => {
       cancelado = true;
@@ -101,7 +117,7 @@ export function HomeScreen() {
   const incidencias = incidentesReales ?? turno?.incidentes.length ?? 0;
 
   return (
-    <ScreenContainer scroll header={<ScreenHeader title="Inicio" />} refreshing={refreshing} onRefresh={onRefresh}>
+    <ScreenContainer scroll scrollRef={scrollRef} header={<ScreenHeader title="Inicio" />} refreshing={refreshing} onRefresh={onRefresh}>
       {/* Saludo */}
       <View style={styles.greeting}>
         <View style={styles.avatarRing}>
@@ -151,7 +167,12 @@ export function HomeScreen() {
       ) : null}
 
       {/* Menú principal: círculos con icono, al estilo de Innova */}
-      <View style={styles.menu}>
+      <View
+        style={styles.menu}
+        onLayout={(e) => {
+          menuYRef.current = e.nativeEvent.layout.y;
+        }}
+      >
         {enServicio ? (
           <>
             <MenuItem step={1} tip="Aquí reportas cualquier incidente con fotos de evidencia." icon="alert" label="Registrar incidente" onPress={() => navigation.navigate('RegisterIncident')} accent />
@@ -164,9 +185,9 @@ export function HomeScreen() {
         ) : (
           <>
             <MenuItem step={1} tip="¡Empieza aquí! Toca para iniciar tu ronda: se registra con foto, GPS y hora." icon="play" label="Iniciar servicio" onPress={() => navigation.navigate('StartServiceCamera')} accent />
-            <MenuItem step={3} tip="Mira tu zona asignada en el mapa." icon="map-outline" label="Mapa" onPress={() => irATab('MapTab')} />
-            <MenuItem step={4} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
-            <MenuItem step={5} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
+            <MenuItem step={2} tip="Mira tu zona asignada en el mapa." icon="map-outline" label="Mapa" onPress={() => irATab('MapTab')} />
+            <MenuItem step={3} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
+            <MenuItem step={4} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
           </>
         )}
       </View>

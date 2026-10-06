@@ -27,10 +27,13 @@ function mensajeError(e: unknown): string {
     if (e.code === 'GUARDIA_PENDING_ACTIVATION') {
       return 'Su cuenta aún no está activada. Use el código de activación que le entregó la Dirección.';
     }
-    if (e.code === 'INVALID_CREDENTIALS') return 'Usuario o contraseña incorrectos.';
+    if (e.code === 'INVALID_CREDENTIALS')
+      return 'Usuario o contraseña incorrectos. Las mayúsculas y los símbolos importan.';
     if (e.code === 'ACCOUNT_DISABLED') return 'Su cuenta está inactiva o suspendida. Consulte con la Dirección.';
     if (e.code === 'RATE_LIMITED') return 'Demasiados intentos. Espere unos segundos e intente de nuevo.';
     if (e.code === 'NETWORK_ERROR') return 'No se pudo conectar con el servidor. Verifique su conexión.';
+    if (e.code === 'BAD_RESPONSE')
+      return 'El servidor no devolvió una respuesta válida. Avise a soporte técnica.';
     if (e.message) return e.message;
   }
   if (e instanceof Error && e.message) return `No se pudo iniciar sesión: ${e.message}`;
@@ -147,6 +150,8 @@ export function LoginScreen({ navigation }: Props) {
                   ref={passwordRef}
                   label="Contraseña"
                   secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   value={password}
                   onChangeText={setPassword}
                   placeholder="••••••••"

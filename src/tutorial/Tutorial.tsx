@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   CopilotProvider,
@@ -34,18 +34,25 @@ export function marcarTutorialVisto(f: FaseTutorial) {
 }
 
 function Tooltip({ labels }: TooltipProps) {
-  const { isLastStep, goToNext, stop, currentStep } = useCopilot();
+  const { isLastStep, isFirstStep, goToNext, goToPrev, stop, currentStep } = useCopilot();
+  // El ancho lo fija el `tooltipStyle` del provider, no el card. La librería
+  // calculaba su propio `maxWidth` a partir del `x` del objetivo (dist/index.js:592),
+  // así que en los ítems de la 3ª columna el card quedaba de ~112px y el texto y
+  // los botones se cortaban. `100%` deja que el ancho lo imponga el provider.
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { width: '100%' }]}>
       <Text style={styles.texto}>{currentStep?.text}</Text>
       <View style={styles.fila}>
-        {!isLastStep ? (
+        <View style={styles.acciones}>
           <Pressable onPress={() => stop()} hitSlop={8}>
             <Text style={styles.saltar}>{labels.skip}</Text>
           </Pressable>
-        ) : (
-          <View />
-        )}
+          {isFirstStep ? null : (
+            <Pressable onPress={() => goToPrev()} hitSlop={8}>
+              <Text style={styles.saltar}>{labels.previous}</Text>
+            </Pressable>
+          )}
+        </View>
         <Pressable onPress={() => (isLastStep ? stop() : goToNext())} style={styles.boton}>
           <Text style={styles.botonTexto}>{isLastStep ? labels.finish : labels.next}</Text>
         </Pressable>
@@ -73,6 +80,13 @@ const mascaraRedondeada: SvgMaskPathFunction = ({ size, position, canvasSize }) 
 
 /** Provider del tutorial con el estilo de la app, en español. */
 export function TutorialProvider({ children }: { children: React.ReactNode }) {
+  const { width: screenWidth } = useWindowDimensions();
+  // La librería posiciona el tooltip a partir del objetivo y le pone un
+  // `maxWidth` = anchoPantalla - xObjetivo - margin, que para objetivos del lado
+  // derecho deja un ancho inservible (ver dist/index.js:581-593). Este estilo se
+  // aplica DESPUÉS del que calcula la librería (dist/index.js:744), así que fija
+  // un ancho que siempre entra en pantalla sin importar dónde esté el foco.
+  const anchoTooltip = Math.max(200, Math.min(320, screenWidth - 24));
   return (
     <CopilotProvider
       tooltipComponent={Tooltip}
@@ -81,6 +95,12 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       animated
       backdropColor="rgba(15, 23, 42, 0.78)"
       arrowColor={colors.white}
+      tooltipStyle={{
+        left: 12,
+        right: undefined,
+        width: anchoTooltip,
+        maxWidth: anchoTooltip,
+      }}
       labels={{ previous: 'Anterior', next: 'Siguiente', skip: 'Saltar', finish: 'Listo' }}
       stepNumberComponent={() => null}
     >
@@ -90,15 +110,19 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  card: {
+card: {
     backgroundColor: colors.white,
     borderRadius: radius.md,
     padding: spacing.md,
-    width: 270,
     gap: spacing.md,
   },
-  texto: { fontSize: 14, lineHeight: 20, color: colors.textPrimary, fontWeight: '500' },
+  // '500' no es un peso soportado de forma consistente en Android: el texto
+  // salía con espaciado raro entre letras.
+  texto: { fontSize: 14, lineHeight: 20, color: colors.textPrimary, fontWeight: '400' },
   fila: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  // Sin flexShrink: con 3 elementos en un ancho chico la fila se comprimía y los
+  // textos se cortaban a media palabra.
+  acciones: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flexShrink: 0 },
   saltar: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   boton: {
     backgroundColor: colors.gold,

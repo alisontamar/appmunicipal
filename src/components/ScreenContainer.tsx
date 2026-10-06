@@ -21,6 +21,13 @@ interface Props {
   /** pull-to-refresh */
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Referencia al ScrollView interno. Necesaria cuando hay un tour guiada
+   * (react-native-copilot) sobre elementos que viven dentro del scroll: la
+   * librería la usa con `start(fromStep, scrollView)` para traer cada objetivo
+   * a la vista antes de medirlo.
+   */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }
 
 export function ScreenContainer({
@@ -33,6 +40,7 @@ export function ScreenContainer({
   statusBar = 'light',
   refreshing,
   onRefresh,
+  scrollRef,
 }: Props) {
   const insets = useSafeAreaInsets();
   // Con header, la banda morada cubre la zona de la barra de estado, asi que el
@@ -55,6 +63,7 @@ export function ScreenContainer({
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <ScrollView
+            ref={scrollRef}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
