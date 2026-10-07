@@ -86,21 +86,25 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   // derecho deja un ancho inservible (ver dist/index.js:581-593). Este estilo se
   // aplica DESPUÉS del que calcula la librería (dist/index.js:744), así que fija
   // un ancho que siempre entra en pantalla sin importar dónde esté el foco.
-  const anchoTooltip = Math.max(200, Math.min(320, screenWidth - 24));
+  const ancho = Math.max(200, screenWidth - spacing.lg * 2);
   return (
     <CopilotProvider
       tooltipComponent={Tooltip}
       overlay="svg"
       svgMaskPath={mascaraRedondeada}
+      tooltipStyle={{
+        left: spacing.lg,
+        right: spacing.lg,
+        width: ancho,
+        maxWidth: ancho,
+        paddingTop: 0,
+        paddingHorizontal: 0,
+        backgroundColor: 'transparent',
+        borderRadius: radius.lg,
+      }}
       animated
       backdropColor="rgba(15, 23, 42, 0.78)"
       arrowColor={colors.white}
-      tooltipStyle={{
-        left: 12,
-        right: undefined,
-        width: anchoTooltip,
-        maxWidth: anchoTooltip,
-      }}
       labels={{ previous: 'Anterior', next: 'Siguiente', skip: 'Saltar', finish: 'Listo' }}
       stepNumberComponent={() => null}
     >
@@ -112,8 +116,9 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 const styles = StyleSheet.create({
 card: {
     backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%',
     gap: spacing.md,
   },
   // '500' no es un peso soportado de forma consistente en Android: el texto
