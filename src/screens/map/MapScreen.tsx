@@ -17,7 +17,7 @@ import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
 
-const MAP_HEIGHT = 280;
+const MAP_HEIGHT = 340;
 
 export function MapScreen() {
   const { turno, enServicio, sincronizarAhora, revisarRuta } = useShift();
@@ -249,13 +249,15 @@ export function MapScreen() {
 
   return (
     <ScreenContainer statusBar="dark" header={<ScreenHeader title="Mapa" />}>
-      {/*
-        El mapa va FUERA del ScrollView a propósito: un WebView con Leaflet
-        dentro de un ScrollView compite por el gesto con el scroll vertical, y
-        el pellizco para hacer zoom queda entrecortado (los botones +/- del
-        mapa sí funcionan porque son un simple tap, no un gesto). Solo el
-        contenido de abajo se desplaza.
-      */}
+      {/* Todo (mapa, calles, ubicación, leyenda) vive en UN solo scroll para leerlo de corrido.
+          Un dedo sobre el mapa lo mueve; fuera del mapa se desplaza la pantalla. */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.navy900]} tintColor={colors.navy900} />}
+      >
       {miUbicacion ? (
         <View>
           <OsmMapView
@@ -325,12 +327,6 @@ export function MapScreen() {
         </View>
       )}
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.navy900]} tintColor={colors.navy900} />}
-      >
         <SectionTitle hint="RF-APP-10">Mi ubicación y ruta</SectionTitle>
         <Card>
           {errorUbicacion ? (

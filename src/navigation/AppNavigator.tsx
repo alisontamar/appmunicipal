@@ -8,7 +8,8 @@ import { StartServiceConfirmScreen } from '@/screens/service/StartServiceConfirm
 import { CloseServiceSummaryScreen } from '@/screens/service/CloseServiceSummaryScreen';
 import { ServiceFinishedScreen } from '@/screens/service/ServiceFinishedScreen';
 import { RegisterIncidentScreen } from '@/screens/incidents/RegisterIncidentScreen';
-import { EvidenceCameraScreen } from '@/screens/incidents/EvidenceCameraScreen';
+import { IncidentCameraScreen } from '@/screens/incidents/IncidentCameraScreen';
+import { IncidentDraftsScreen } from '@/screens/incidents/IncidentDraftsScreen';
 import { IncidentSuccessScreen } from '@/screens/incidents/IncidentSuccessScreen';
 import { IncidentDetailScreen } from '@/screens/incidents/IncidentDetailScreen';
 import { RegisterErrandScreen } from '@/screens/errands/RegisterErrandScreen';
@@ -58,9 +59,14 @@ export function AppNavigator() {
           options={{ title: 'Registrar incidente' }}
         />
         <Stack.Screen
-          name="EvidenceCamera"
-          component={EvidenceCameraScreen}
-          options={{ title: 'Adjuntar evidencia', headerShown: false }}
+          name="IncidentCamera"
+          component={IncidentCameraScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="IncidentDrafts"
+          component={IncidentDraftsScreen}
+          options={{ title: 'Borradores de incidente' }}
         />
         <Stack.Screen
           name="IncidentSuccess"

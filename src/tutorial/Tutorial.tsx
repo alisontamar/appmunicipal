@@ -19,7 +19,8 @@ export { CopilotStep, useCopilot };
 
 /** Cada fase se muestra una sola vez por instalación. */
 export type FaseTutorial = 'inicio' | 'servicio';
-const clave = (f: FaseTutorial) => `tutorial_visto_${f}`;
+// v2: el tutorial cambió (botón central de incidentes), se vuelve a mostrar una vez.
+const clave = (f: FaseTutorial) => `tutorial_visto_v2_${f}`;
 
 export async function tutorialVisto(f: FaseTutorial): Promise<boolean> {
   try {

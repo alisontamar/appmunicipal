@@ -26,6 +26,8 @@ import {
 } from '@/utils/location';
 import { iniciarSeguimientoBackground, detenerSeguimientoBackground, setPuntoListener } from '@/utils/backgroundLocationTask';
 import { borrarCaptura, borrarCapturas, limpiarCapturasHuerfanas } from '@/utils/media';
+import { procesarPuntoGps, reiniciarFiltroGps } from '@/utils/filtroGps';
+import { listarBorradores } from '@/utils/borradoresIncidente';
 import {
   encolar,
   hayConexion,
@@ -140,7 +142,13 @@ interface ShiftState {
   refrescarHistorial: () => Promise<void>;
   iniciarServicio: (fotoUri: string) => Promise<Turno>;
   cerrarServicio: () => Promise<Turno>;
-  agregarIncidente: (data: Omit<incidentesApi.NuevoIncidente, 'turnoId' | 'ubicacion'>) => Promise<Incidente>;
+  /**
+   * `ubicacion` es opcional: un reporte armado desde un borrador lleva la hora y
+   * el lugar de cuando se EMPEZÓ, y no debe pisarlos con los del envío.
+   */
+  agregarIncidente: (
+    data: Omit<incidentesApi.NuevoIncidente, 'turnoId' | 'ubicacion'> & { ubicacion?: GeoPoint },
+  ) => Promise<Incidente>;
   agregarMandado: (descripcion: string) => Promise<Mandado>;
   dispararSos: () => Promise<sosApi.AlertaSos>;
   registrarCheckpoint: (fotoUri: string) => Promise<Checkpoint>;
@@ -352,11 +360,17 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     let cancelado = false;
     (async () => {
       const items = await listarPendientes();
+      // Las fotos de los borradores también están en uso: sin esto el barrido
+      // las borraría a las 24 h y el guardia perdería la evidencia del borrador.
+      const borradores = await listarBorradores();
       if (cancelado) return;
-      const referencias = items.flatMap((i) => {
-        const p = i.payload as { evidenciaUris?: string[]; fotoUri?: string } | null;
-        return [...(p?.evidenciaUris ?? []), ...(p?.fotoUri ? [p.fotoUri] : [])];
-      });
+      const referencias = [
+        ...items.flatMap((i) => {
+          const p = i.payload as { evidenciaUris?: string[]; fotoUri?: string } | null;
+          return [...(p?.evidenciaUris ?? []), ...(p?.fotoUri ? [p.fotoUri] : [])];
+        }),
+        ...borradores.flatMap((b) => b.evidenciaUris),
+      ];
       const borradas = limpiarCapturasHuerfanas(referencias);
       if (borradas > 0) console.log(`[Media] barrido: ${borradas} captura(s) huerfana(s)`);
     })();
@@ -456,9 +470,12 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         iniciarSeguimientoUbicacion(
-          (punto) => {
-            actualizarRecorridoLocal(punto);
-            enviarUbicacionOEncolar(turnoId, punto);
+          (lectura) => {
+            // Filtro anti-deriva: quieto = mismo punto, no suma metros.
+            const filtrado = procesarPuntoGps(lectura);
+            if (!filtrado) return;
+            actualizarRecorridoLocal(filtrado.punto);
+            enviarUbicacionOEncolar(turnoId, filtrado.punto);
           },
           (err) => setAvisoUbicacion(err.message),
         ).then((sub) => {
@@ -564,6 +581,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
           return restaurado;
         });
         if (aplicado) {
+          reiniciarFiltroGps(restaurado.recorrido[restaurado.recorrido.length - 1] ?? null);
           iniciarSeguimiento(restaurado.id);
           proximoCheckpointRef.current = proximoCheckpointEn();
           proximaPresenciaRef.current = proximaPresenciaEn();
@@ -620,6 +638,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
       // Ya se tiene `ubicacion` (se pidió arriba para el selfie de inicio)
       // — mandarla de una evita esa espera extra.
       enviarUbicacionOEncolar(nuevo.id, ubicacion);
+      // El punto de arranque es el ancla del filtro anti-deriva.
+      reiniciarFiltroGps(ubicacion);
       iniciarSeguimiento(nuevo.id);
       proximoCheckpointRef.current = proximoCheckpointEn();
       proximaPresenciaRef.current = proximaPresenciaEn();
@@ -633,6 +653,7 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const cerrarServicio = useCallback(async () => {
     if (!turno) throw new Error('No hay turno en curso');
     detenerSeguimiento();
+    reiniciarFiltroGps(null);
     proximoCheckpointRef.current = null;
     proximaPresenciaRef.current = null;
     checkpointVenceRef.current = null;
@@ -663,7 +684,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const agregarIncidente = useCallback<ShiftState['agregarIncidente']>(
     async (data) => {
       if (!turno) throw new Error('No hay turno en curso');
-      const ubicacion = await obtenerUbicacionActual();
+      // Si el reporte trae su propia ubicación/hora (borrador), se respeta.
+      const ubicacion = data.ubicacion ?? (await obtenerUbicacionActual());
       const payload: incidentesApi.NuevoIncidente = { ...data, turnoId: turno.id, ubicacion };
 
       const inc = await enviarOEncolar(
@@ -742,7 +764,9 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     setPresenciaPendiente(false);
     if (!turno) return;
     try {
-      enviarUbicacionOEncolar(turno.id, await obtenerUbicacionActual());
+      const lectura = await obtenerUbicacionActual();
+      const filtrado = procesarPuntoGps(lectura);
+      enviarUbicacionOEncolar(turno.id, filtrado ? filtrado.punto : lectura);
     } catch (e) {
       console.warn('[Shift] no se pudo enviar la confirmación de presencia:', e);
     }

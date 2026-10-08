@@ -28,7 +28,7 @@ export function IncidentSuccessScreen({ navigation }: Props) {
         <Button
           label="Registrar otro incidente"
           variant="outline"
-          onPress={() => navigation.replace('RegisterIncident')}
+          onPress={() => navigation.replace('IncidentCamera')}
         />
       </View>
     </View>

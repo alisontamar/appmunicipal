@@ -17,7 +17,7 @@ import {
 import { obtenerRecorrido } from '@/api/turnos';
 import { useShift } from '@/context/ShiftContext';
 import { mockTurnosHistoricos } from '@/mocks';
-import type { GeoPoint } from '@/types';
+import type { GeoPoint, Turno } from '@/types';
 import { riskColor } from '@/theme';
 import {
   formatDistancia,
@@ -35,7 +35,7 @@ export function ShiftDetailScreen({ route }: Props) {
   const { turno: turnoActual, historialTurnos } = useShift();
   const { turnoId } = route.params;
 
-  const [turnoRemoto, setTurnoRemoto] = React.useState<any>(null);
+  const [turnoRemoto, setTurnoRemoto] = React.useState<Turno | null>(null);
   const [cargandoTurno, setCargandoTurno] = React.useState(false);
 
   const turnoLocal =

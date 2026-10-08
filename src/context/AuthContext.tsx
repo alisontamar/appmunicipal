@@ -1,7 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import * as authApi from '@/api/auth';
-import { cargarTokens } from '@/api/client';
+import { cargarTokens, SesionExpiradaError } from '@/api/client';
 import type { Guardia } from '@/types';
 
 interface AuthState {
@@ -17,6 +19,27 @@ interface AuthState {
   signOut: () => void;
 }
 
+// Copia local del guardia: permite abrir la app al instante sin esperar a la red.
+const GUARDIA_KEY = 'gamc:guardia';
+
+async function guardarGuardia(g: Guardia | null): Promise<void> {
+  try {
+    if (g) await AsyncStorage.setItem(GUARDIA_KEY, JSON.stringify(g));
+    else await AsyncStorage.removeItem(GUARDIA_KEY);
+  } catch {
+    // best effort
+  }
+}
+
+async function leerGuardia(): Promise<Guardia | null> {
+  try {
+    const raw = await AsyncStorage.getItem(GUARDIA_KEY);
+    return raw ? (JSON.parse(raw) as Guardia) : null;
+  } catch {
+    return null;
+  }
+}
+
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -26,23 +49,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [ultimoUsuario, setUltimoUsuario] = useState<string | null>(null);
 
-  // Al arrancar: si hay un token guardado, se valida contra /me y se entra directo.
+  // Al arrancar: si hay token y un guardia guardado, se entra al instante y la
+  // sesion se valida contra /me en segundo plano. Antes se esperaba a /me con la
+  // pantalla en blanco: con red lenta (o sin respuesta) la app quedaba negra.
   useEffect(() => {
     let vigente = true;
     (async () => {
+      let validar = false;
       try {
         const { accessToken } = await cargarTokens();
         if (accessToken) {
-          const g = await authApi.me();
-          if (!vigente) return;
-          setGuardia(g);
-          setToken(accessToken);
-          setUltimoUsuario(g.usuario);
+          const guardado = await leerGuardia();
+          if (guardado && vigente) {
+            setGuardia(guardado);
+            setToken(accessToken);
+            setUltimoUsuario(guardado.usuario);
+            validar = true;
+          } else {
+            // Primera vez tras actualizar: no hay copia local, se espera a /me.
+            const g = await authApi.me();
+            if (!vigente) return;
+            setGuardia(g);
+            setToken(accessToken);
+            setUltimoUsuario(g.usuario);
+            void guardarGuardia(g);
+          }
         }
       } catch {
         // Token vencido o invalidado: se arranca en la pantalla de login.
       } finally {
         if (vigente) setBooting(false);
+      }
+
+      if (!validar) return;
+      try {
+        const g = await authApi.me();
+        if (!vigente) return;
+        setGuardia(g);
+        void guardarGuardia(g);
+      } catch (e) {
+        // Sin red: se queda con la sesion local. Solo se cierra si el servidor la rechaza.
+        if (vigente && e instanceof SesionExpiradaError) {
+          setToken(null);
+          setGuardia(null);
+          void guardarGuardia(null);
+        }
       }
     })();
     return () => {
@@ -56,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await authApi.login(usuario, password);
       setToken(res.token);
       setGuardia(res.guardia);
+      void guardarGuardia(res.guardia);
       setUltimoUsuario(usuario);
     } finally {
       setLoading(false);
@@ -65,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     setToken(null);
     setGuardia(null);
+    void guardarGuardia(null);
     void authApi.logout();
   }, []);
 

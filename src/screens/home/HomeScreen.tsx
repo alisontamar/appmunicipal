@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, ScrollView, Text, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, spacing } from '@/theme';
@@ -13,6 +13,7 @@ import { useRelojEnVivo } from '@/hooks/useRelojEnVivo';
 import { formatDistancia, formatDuracion, formatHora } from '@/utils/format';
 import type { AppStackParamList } from '@/navigation/types';
 import * as incidentesApi from '@/api/incidentes';
+import { listarBorradores } from '@/utils/borradoresIncidente';
 import {
   CopilotStep,
   Walkthroughable,
@@ -30,13 +31,14 @@ export function HomeScreen() {
   const { turno, enServicio, avisoUbicacion, sincronizarAhora, revisarRuta } = useShift();
   const [refreshing, setRefreshing] = useState(false);
   const [incidentesReales, setIncidentesReales] = useState<number | null>(null);
+  const [borradores, setBorradores] = useState(0);
   useRelojEnVivo(1000);
   const { start, copilotEvents } = useCopilot();
   const fase: FaseTutorial = enServicio ? 'servicio' : 'inicio';
 
   // Mini tutorial de primer uso: una fase al abrir Inicio sin servicio y otra
-  // la primera vez que el guardia entra en servicio (ahí aparecen incidente,
-  // tarea, cerrar y el SOS). Cada una se muestra una sola vez.
+  // la primera vez que el guardia entra en servicio (ahí aparecen tarea,
+  // cerrar, el botón central de incidentes y el SOS). Cada una se muestra una sola vez.
   // `start` cambia de identidad cada vez que se registra un paso; si estuviera en
   // las dependencias reiniciaba el tutorial al pulsar "Siguiente". Se guarda en
   // un ref y se lanza una sola vez por fase.
@@ -93,6 +95,12 @@ export function HomeScreen() {
       setIncidentesReales(null);
     }
   }, [turno?.id]);
+  // Borradores de incidente guardados: se recuentan cada vez que Inicio vuelve a estar en pantalla.
+  useFocusEffect(
+    useCallback(() => {
+      listarBorradores().then((l) => setBorradores(l.length));
+    }, []),
+  );
   // Refrescar conteo al entrar y cuando cambie el turno
   React.useEffect(() => {
     if (enServicio) recargarIncidentes();
@@ -166,6 +174,20 @@ export function HomeScreen() {
         </View>
       ) : null}
 
+      {enServicio && borradores > 0 ? (
+        <Pressable
+          onPress={() => navigation.navigate('IncidentDrafts')}
+          style={({ pressed }) => [styles.draftsBanner, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="document-text" size={18} color={colors.navy900} />
+          <Text style={styles.draftsText}>
+            Tienes {borradores} borrador{borradores === 1 ? '' : 'es'} de incidente sin enviar
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.navy900} />
+        </Pressable>
+      ) : null}
+
       {/* Menú principal: círculos con icono, al estilo de Innova */}
       <View
         style={styles.menu}
@@ -175,12 +197,11 @@ export function HomeScreen() {
       >
         {enServicio ? (
           <>
-            <MenuItem step={1} tip="Aquí reportas cualquier incidente con fotos de evidencia." icon="alert" label="Registrar incidente" onPress={() => navigation.navigate('RegisterIncident')} accent />
-            <MenuItem step={2} tip="Anota los mandados o tareas que te encargan durante la ronda." icon="clipboard-outline" label="Registrar tarea" onPress={() => navigation.navigate('RegisterErrand')} />
-            <MenuItem step={3} tip="Mira tu zona asignada y tu recorrido en el mapa." icon="map-outline" label="Mapa de ronda" onPress={() => irATab('MapTab')} />
-            <MenuItem step={4} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
-            <MenuItem step={5} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
-            <MenuItem step={6} tip="Al terminar tu ronda, ciérrala desde aquí." icon="stop-circle-outline" label="Cerrar servicio" onPress={() => navigation.navigate('CloseServiceSummary')} />
+            <MenuItem step={1} tip="Anota los mandados o tareas que te encargan durante la ronda." icon="clipboard-outline" label="Registrar tarea" onPress={() => navigation.navigate('RegisterErrand')} accent />
+            <MenuItem step={2} tip="Mira tu zona asignada y tu recorrido en el mapa." icon="map-outline" label="Mapa de ronda" onPress={() => irATab('MapTab')} />
+            <MenuItem step={3} tip="Consulta tus turnos anteriores." icon="time-outline" label="Historial" onPress={() => irATab('HistoryTab')} />
+            <MenuItem step={4} tip="Tus datos y el estado de sincronización." icon="person-outline" label="Perfil" onPress={() => irATab('ProfileTab')} />
+            <MenuItem step={5} tip="Al terminar tu ronda, ciérrala desde aquí." icon="stop-circle-outline" label="Cerrar servicio" onPress={() => navigation.navigate('CloseServiceSummary')} />
           </>
         ) : (
           <>
@@ -288,6 +309,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
+  draftsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: colors.lilacStrong,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  draftsText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.navy900 },
   warningText: { flex: 1, fontSize: 12, color: colors.danger, fontWeight: '600' },
   menu: {
     flexDirection: 'row',
