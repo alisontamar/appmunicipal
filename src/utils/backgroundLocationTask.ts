@@ -6,6 +6,7 @@ import type { GeoPoint } from '@/types';
 import { cargarTokens, tokenActual } from '@/api/client';
 import { enviarUbicacion } from '@/api/turnos';
 import { encolar } from './offlineQueue';
+import { procesarPuntoGps } from './filtroGps';
 
 /**
  * Tracking en segundo plano (RF-APP-05, pedido explícito: "cuando el celular
@@ -66,6 +67,7 @@ function aGeoPoint(loc: Location.LocationObject): GeoPoint {
     latitud: loc.coords.latitude,
     longitud: loc.coords.longitude,
     timestamp: new Date(loc.timestamp).toISOString(),
+    precision: loc.coords.accuracy ?? undefined,
   };
 }
 
@@ -100,7 +102,10 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
     // Solo el punto más reciente del lote — igual criterio que
     // watchPositionAsync en foreground, no hace falta mandar cada punto
     // intermedio que el sistema haya podido agrupar.
-    const punto = aGeoPoint(locations[locations.length - 1]!);
+    // Filtro anti-deriva: un guardia quieto repite el mismo punto (no suma metros).
+    const filtrado = procesarPuntoGps(aGeoPoint(locations[locations.length - 1]!));
+    if (!filtrado) return;
+    const punto = filtrado.punto;
     puntoListener?.(punto);
 
     if (!tokenActual()) {

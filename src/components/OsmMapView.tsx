@@ -160,6 +160,7 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
         source={{ html }}
         javaScriptEnabled
         domStorageEnabled
+        nestedScrollEnabled
         onLoadEnd={() => {
           mapReadyRef.current = true;
           if (pendingZonaRef.current && pendingZonaRef.current.length > 0) {

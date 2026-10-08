@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { colors, radius, riskColor, riskLabel, spacing, typography } from '@/theme';
 import { Button, Card, ScreenContainer, SectionTitle, TextField } from '@/components';
 import { useShift } from '@/context/ShiftContext';
-import { useUbicacionActual } from '@/hooks/useUbicacionActual';
-import { formatCoords, formatHora } from '@/utils/format';
+import { obtenerUbicacionActual } from '@/utils/location';
+import { formatCoords, formatFechaHora } from '@/utils/format';
+import {
+  borradorTieneContenido,
+  eliminarBorrador,
+  esUriDeVideo,
+  guardarBorrador,
+  listarBorradores,
+  nuevoBorrador,
+  ubicacionDeBorrador,
+  type BorradorIncidente,
+} from '@/utils/borradoresIncidente';
+import { borrarCapturas } from '@/utils/media';
 import type { IncidentType, RiskLevel } from '@/types';
 import type { AppStackParamList } from '@/navigation/types';
 
@@ -24,100 +35,178 @@ const TIPOS: { value: IncidentType; label: string; icon: keyof typeof Ionicons.g
 
 const RIESGOS: RiskLevel[] = ['bajo', 'medio', 'alto', 'muy_alto'];
 
-// Los uris de video terminan en estas extensiones; todo lo demás lo tratamos como foto.
-const EXT_VIDEO = ['.mp4', '.mov', '.m4v'];
-function esVideo(uri: string): boolean {
-  return EXT_VIDEO.some((ext) => uri.toLowerCase().endsWith(ext));
-}
-
+/**
+ * Formulario del reporte. Llega desde la cámara (o desde la lista de borradores)
+ * con un borrador que ya trae las fotos y, sobre todo, la HORA y UBICACIÓN de
+ * cuando el guardia empezó el reporte. Al enviar se usan esos datos y no los del
+ * momento del envío, para que un borrador mandado más tarde conserve su origen.
+ */
 export function RegisterIncidentScreen({ navigation, route }: Props) {
   const { agregarIncidente } = useShift();
-  const {
-    ubicacion: captura,
-    cargando,
-    tardando,
-    error: errorUbicacion,
-    permisoDenegado,
-    reintentar,
-  } = useUbicacionActual();
-
-  // El borrador puede venir en los params al volver de la cámara: así abrir
-  // "Agregar foto/video" no borra el tipo, la descripción ni el nivel de riesgo.
-  const borrador = route.params?.borrador;
-  const [tipo, setTipo] = useState<IncidentType | null>(borrador?.tipo ?? null);
-  const [descripcion, setDescripcion] = useState(borrador?.descripcion ?? '');
-  const [riesgo, setRiesgo] = useState<RiskLevel | null>(borrador?.riesgo ?? null);
-  const [evidencias, setEvidencias] = useState<string[]>(route.params?.evidenciaUris ?? []);
+  const [borrador, setBorrador] = useState<BorradorIncidente>(
+    () => route.params?.borrador ?? nuevoBorrador(),
+  );
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [buscandoUbicacion, setBuscandoUbicacion] = useState(false);
 
-  const abrirCamara = (kind: 'foto' | 'video') =>
-    navigation.navigate('EvidenceCamera', {
-      modo: kind,
-      evidenciasPrevias: evidencias,
-      returnTo: 'RegisterIncident',
-      borrador: { tipo, descripcion, riesgo },
+  const salidaLibreRef = useRef(false);
+  // true si este borrador ya está guardado en el teléfono (viene de la lista o se guardó antes).
+  const enDiscoRef = useRef(false);
+  const borradorRef = useRef(borrador);
+  borradorRef.current = borrador;
+
+  // Al volver de la cámara llega el borrador actualizado con las fotos nuevas.
+  const borradorParam = route.params?.borrador;
+  useEffect(() => {
+    if (borradorParam) setBorrador(borradorParam);
+  }, [borradorParam]);
+
+  useEffect(() => {
+    const id = borradorRef.current.id;
+    listarBorradores().then((l) => {
+      if (l.some((b) => b.id === id)) enDiscoRef.current = true;
     });
+  }, []);
+
+  const actualizar = (cambios: Partial<BorradorIncidente>) =>
+    setBorrador((b) => ({ ...b, ...cambios }));
 
   const quitarEvidencia = (uri: string) =>
-    setEvidencias((prev) => prev.filter((e) => e !== uri));
+    setBorrador((b) => ({ ...b, evidenciaUris: b.evidenciaUris.filter((e) => e !== uri) }));
 
-  React.useEffect(() => {
-    if (route.params?.evidenciaUris) {
-      setEvidencias(route.params.evidenciaUris);
+  const agregarMasEvidencia = () => navigation.navigate('IncidentCamera', { borrador });
+
+  const volverAInicio = () => navigation.popTo('Tabs', { screen: 'HomeTab' });
+
+  const guardar = async (): Promise<boolean> => {
+    try {
+      await guardarBorrador(borradorRef.current);
+      enDiscoRef.current = true;
+      return true;
+    } catch (e) {
+      console.warn('[Incidente] no se pudo guardar el borrador:', e);
+      return false;
     }
-  }, [route.params?.evidenciaUris]);
+  };
 
-  // Al regresar de la cámara, rehidrata el formulario por si el screen se
-  // remontó y el estado local se perdió.
-  React.useEffect(() => {
-    if (!borrador) return;
-    setTipo(borrador.tipo);
-    setDescripcion(borrador.descripcion);
-    setRiesgo(borrador.riesgo);
-  }, [borrador]);
-
-  const enviar = async () => {
-    if (!tipo || !riesgo || descripcion.trim().length < 5) {
-      setError('Seleccione tipo, nivel de riesgo y describa el hecho (mín. 5 caracteres).');
+  const guardarYSalir = async () => {
+    if (!(await guardar())) {
+      setError('No se pudo guardar el borrador. Intente nuevamente.');
       return;
     }
-    if (!captura) {
-      setError('Aún no se pudo obtener la ubicación GPS. Reintente antes de enviar.');
+    salidaLibreRef.current = true;
+    Alert.alert(
+      'Borrador guardado',
+      'Puede retomarlo desde Inicio. Se conservan la hora y la ubicación de cuando lo empezó.',
+    );
+    volverAInicio();
+  };
+
+  const reintentarUbicacion = async () => {
+    setBuscandoUbicacion(true);
+    try {
+      const p = await obtenerUbicacionActual();
+      actualizar({
+        ubicacionInicio: { latitud: p.latitud, longitud: p.longitud, precision: p.precision },
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo obtener la ubicación.');
+    } finally {
+      setBuscandoUbicacion(false);
+    }
+  };
+
+  // Salir con algo escrito/capturado: preguntar antes de perderlo.
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (salidaLibreRef.current) return;
+      const actual = borradorRef.current;
+      if (!borradorTieneContenido(actual)) return;
+      e.preventDefault();
+
+      const salir = () => {
+        salidaLibreRef.current = true;
+        navigation.dispatch(e.data.action);
+      };
+
+      Alert.alert('Reporte sin enviar', '¿Qué desea hacer con este reporte?', [
+        { text: 'Seguir editando', style: 'cancel' },
+        enDiscoRef.current
+          ? { text: 'Salir sin guardar cambios', style: 'destructive', onPress: salir }
+          : {
+              text: 'Descartar',
+              style: 'destructive',
+              onPress: () => {
+                borrarCapturas(actual.evidenciaUris);
+                salir();
+              },
+            },
+        {
+          text: 'Guardar borrador',
+          onPress: async () => {
+            if (await guardar()) salir();
+            else Alert.alert('No se pudo guardar', 'Intente nuevamente.');
+          },
+        },
+      ]);
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation]);
+
+  const enviar = async () => {
+    if (!borrador.tipo || !borrador.riesgo || borrador.descripcion.trim().length < 5) {
+      setError('Seleccione tipo, nivel de riesgo y describa el hecho (mín. 5 caracteres).');
       return;
     }
     setError(undefined);
     setBusy(true);
     try {
+      // Hora y lugar de cuando se EMPEZÓ el reporte. Solo si el GPS no respondió
+      // entonces se usa la ubicación actual (con la hora de inicio igualmente).
+      let ubicacion = ubicacionDeBorrador(borrador);
+      if (!ubicacion) {
+        const ahora = await obtenerUbicacionActual();
+        ubicacion = { ...ahora, timestamp: borrador.horaInicio };
+      }
       await agregarIncidente({
-        tipo,
-        descripcion: descripcion.trim(),
-        nivelRiesgo: riesgo,
-        evidenciaUris: evidencias,
+        tipo: borrador.tipo,
+        descripcion: borrador.descripcion.trim(),
+        nivelRiesgo: borrador.riesgo,
+        evidenciaUris: borrador.evidenciaUris,
+        ubicacion,
       });
+      await eliminarBorrador(borrador.id);
+      salidaLibreRef.current = true;
       navigation.replace('IncidentSuccess');
+    } catch (e) {
+      // Que un fallo no cueste el reporte: queda como borrador en el teléfono.
+      const guardado = await guardar();
+      const detalle = e instanceof Error ? e.message : 'No se pudo enviar el reporte.';
+      setError(
+        guardado ? `${detalle} Se guardó como borrador; puede reintentar más tarde.` : detalle,
+      );
     } finally {
       setBusy(false);
     }
   };
+
+  const evidencias = borrador.evidenciaUris;
 
   return (
     <ScreenContainer scroll>
       <SectionTitle hint="RF-APP-08">Tipo de hecho</SectionTitle>
       <View style={styles.chips}>
         {TIPOS.map((t) => {
-          const active = tipo === t.value;
+          const active = borrador.tipo === t.value;
           return (
             <Pressable
               key={t.value}
-              onPress={() => setTipo(t.value)}
+              onPress={() => actualizar({ tipo: t.value })}
               style={[styles.chip, active && styles.chipActive]}
             >
-              <Ionicons
-                name={t.icon}
-                size={16}
-                color={active ? colors.white : colors.navy900}
-              />
+              <Ionicons name={t.icon} size={16} color={active ? colors.white : colors.navy900} />
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{t.label}</Text>
             </Pressable>
           );
@@ -127,8 +216,8 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
       <SectionTitle>Descripción</SectionTitle>
       <TextField
         label="¿Qué ocurrió?"
-        value={descripcion}
-        onChangeText={setDescripcion}
+        value={borrador.descripcion}
+        onChangeText={(descripcion) => actualizar({ descripcion })}
         placeholder="Relate lo sucedido, personas involucradas, características…"
         multiline
         numberOfLines={4}
@@ -138,36 +227,29 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
       <SectionTitle>Nivel de riesgo</SectionTitle>
       <View style={styles.chips}>
         {RIESGOS.map((r) => {
-          const active = riesgo === r;
+          const active = borrador.riesgo === r;
           return (
             <Pressable
               key={r}
-              onPress={() => setRiesgo(r)}
+              onPress={() => actualizar({ riesgo: r })}
               style={[
                 styles.riskChip,
                 { borderColor: riskColor[r] },
                 active && { backgroundColor: riskColor[r] },
               ]}
             >
-              <Text style={[styles.riskText, active && styles.riskTextActive]}>
-                {riskLabel[r]}
-              </Text>
+              <Text style={[styles.riskText, active && styles.riskTextActive]}>{riskLabel[r]}</Text>
             </Pressable>
           );
         })}
       </View>
 
-      <SectionTitle>Evidencia multimedia</SectionTitle>
-      <View style={styles.evRow}>
-        <Button label="Agregar foto" icon="camera" variant="outline" onPress={() => abrirCamara('foto')} style={styles.evBtn} />
-        <Button label="Agregar video" icon="videocam" variant="outline" onPress={() => abrirCamara('video')} style={styles.evBtn} />
-      </View>
-
+      <SectionTitle>{`Evidencia multimedia (${evidencias.length})`}</SectionTitle>
       {evidencias.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbsRow}>
           {evidencias.map((uri) => (
             <View key={uri} style={styles.thumbWrap}>
-              {esVideo(uri) ? (
+              {esUriDeVideo(uri) ? (
                 <View style={[styles.thumb, styles.videoThumb]}>
                   <Ionicons name="videocam" size={24} color={colors.white} />
                 </View>
@@ -181,44 +263,41 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
           ))}
         </ScrollView>
       )}
+      <Button
+        label={evidencias.length > 0 ? 'Agregar más fotos o videos' : 'Agregar fotos o videos'}
+        icon="camera"
+        variant="outline"
+        onPress={agregarMasEvidencia}
+        style={styles.evBtn}
+      />
 
-      <SectionTitle>Ubicación y hora (automáticas)</SectionTitle>
-      {cargando ? (
-        <Card>
-          <View style={styles.autoRow}>
-            <Ionicons name="navigate" size={18} color={colors.gold} />
-            <Text style={typography.body}>Obteniendo ubicación GPS…</Text>
-          </View>
-          {tardando && (
-            <Text style={[typography.caption, styles.tardando]}>
-              Esto puede tardar unos segundos en interiores.
-            </Text>
-          )}
-        </Card>
-      ) : errorUbicacion || !captura ? (
-        <Card>
-          <View style={styles.autoRow}>
-            <Ionicons name="warning" size={18} color={colors.danger} />
-            <Text style={[typography.body, styles.error]}>
-              {permisoDenegado
-                ? 'Active el permiso de ubicación para registrar el hecho.'
-                : errorUbicacion ?? 'No se pudo obtener la ubicación.'}
-            </Text>
-          </View>
-          <Button label="Reintentar ubicación" variant="outline" onPress={reintentar} />
-        </Card>
-      ) : (
-        <Card>
-          <View style={styles.autoRow}>
-            <Ionicons name="location" size={18} color={colors.gold} />
-            <Text style={typography.body}>{formatCoords(captura.latitud, captura.longitud)}</Text>
-          </View>
-          <View style={styles.autoRow}>
-            <Ionicons name="time" size={18} color={colors.gold} />
-            <Text style={typography.body}>{formatHora(captura.timestamp)}</Text>
-          </View>
-        </Card>
-      )}
+      <SectionTitle>Hora y lugar del inicio del reporte</SectionTitle>
+      <Card>
+        <View style={styles.autoRow}>
+          <Ionicons name="time" size={18} color={colors.gold} />
+          <Text style={typography.body}>{formatFechaHora(borrador.horaInicio)}</Text>
+        </View>
+        <View style={styles.autoRow}>
+          <Ionicons name="location" size={18} color={colors.gold} />
+          <Text style={[typography.body, styles.flex]}>
+            {borrador.ubicacionInicio
+              ? formatCoords(borrador.ubicacionInicio.latitud, borrador.ubicacionInicio.longitud)
+              : 'No se pudo tomar la ubicación al iniciar.'}
+          </Text>
+        </View>
+        {!borrador.ubicacionInicio ? (
+          <Button
+            label="Obtener ubicación ahora"
+            icon="navigate"
+            variant="outline"
+            loading={buscandoUbicacion}
+            onPress={reintentarUbicacion}
+          />
+        ) : null}
+        <Text style={[typography.caption, styles.nota]}>
+          Estos datos se conservan aunque guarde el reporte como borrador y lo envíe más tarde.
+        </Text>
+      </Card>
 
       {error ? <Text style={[typography.caption, styles.error]}>{error}</Text> : null}
 
@@ -228,18 +307,22 @@ export function RegisterIncidentScreen({ navigation, route }: Props) {
         variant="danger"
         large
         loading={busy}
-        disabled={!captura || cargando}
         onPress={enviar}
         style={styles.submit}
       />
-      <Text style={[typography.caption, styles.note]}>
-        Campos definitivos y catálogo de tipos: pendientes de las especificaciones del cliente.
-      </Text>
+      <Button
+        label="Guardar borrador"
+        icon="save"
+        variant="outline"
+        disabled={busy}
+        onPress={guardarYSalir}
+      />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
     flexDirection: 'row',
@@ -265,9 +348,8 @@ const styles = StyleSheet.create({
   },
   riskText: { fontWeight: '700', fontSize: 13, color: colors.textPrimary },
   riskTextActive: { color: '#1F2937' },
-  evRow: { flexDirection: 'row', gap: spacing.sm },
-  evBtn: { flex: 1 },
-  thumbsRow: { marginTop: spacing.md },
+  evBtn: { marginTop: spacing.sm },
+  thumbsRow: { marginTop: spacing.xs },
   thumbWrap: { marginRight: spacing.sm, position: 'relative' },
   thumb: {
     width: 76,
@@ -294,8 +376,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   autoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  nota: { marginTop: spacing.sm },
   error: { color: colors.danger, marginTop: spacing.md },
   submit: { marginTop: spacing.xl, marginBottom: spacing.sm },
-  note: { textAlign: 'center' },
-  tardando: { marginTop: spacing.sm },
 });

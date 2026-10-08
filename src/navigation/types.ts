@@ -1,13 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { IncidentType, RiskLevel } from '@/types';
-
-/** Borrador del formulario de incidente que viaja de ida y vuelta a la cámara
- *  para que abrir "Agregar foto/video" no borre lo ya escrito. */
-export interface BorradorIncidente {
-  tipo: IncidentType | null;
-  descripcion: string;
-  riesgo: RiskLevel | null;
-}
+import type { BorradorIncidente } from '@/utils/borradoresIncidente';
 
 export type AuthStackParamList = {
   Splash: undefined;
@@ -29,13 +21,17 @@ export type AppStackParamList = {
   CheckpointCamera: undefined;
   StartServiceConfirm: { fotoUri: string };
   // Registrar Incidente (RF-APP-08)
-  RegisterIncident: { evidenciaUris?: string[]; borrador?: BorradorIncidente } | undefined;
+  // Entrada directa: cámara con varias fotos. Sin `borrador` = reporte nuevo;
+  // con `borrador` = se vuelve desde el formulario a agregar más evidencia.
+  IncidentCamera: { borrador?: BorradorIncidente } | undefined;
+  RegisterIncident: { borrador: BorradorIncidente };
   EvidenceCamera: {
     modo: 'foto' | 'video';
     evidenciasPrevias: string[];
-    returnTo: 'RegisterIncident';
+    returnTo: keyof AppStackParamList;
     borrador?: BorradorIncidente;
   };
+  IncidentDrafts: undefined;
   IncidentSuccess: undefined;
   // Registrar Mandado (RF-APP-06)
   RegisterErrand: undefined;

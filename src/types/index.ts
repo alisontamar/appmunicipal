@@ -30,6 +30,8 @@ export interface GeoPoint {
   latitud: number;
   longitud: number;
   timestamp: string; // ISO
+  /** Precisión horizontal que reporta el GPS, en metros (opcional). */
+  precision?: number;
 }
 
 export type IncidentType =

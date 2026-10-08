@@ -44,6 +44,7 @@ function aGeoPoint(pos: Location.LocationObject): GeoPoint {
     latitud: pos.coords.latitude,
     longitud: pos.coords.longitude,
     timestamp: new Date(pos.timestamp).toISOString(),
+    precision: pos.coords.accuracy ?? undefined,
   };
 }
 
