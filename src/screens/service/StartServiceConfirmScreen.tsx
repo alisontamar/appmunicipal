@@ -24,7 +24,7 @@ export function StartServiceConfirmScreen({ navigation, route }: Props) {
     if (!captura) return;
     setBusy(true);
     try {
-      await iniciarServicio(fotoUri);
+      await iniciarServicio(fotoUri, captura);
       navigation.navigate('Tabs', { screen: 'HomeTab' });
     } finally {
       setBusy(false);

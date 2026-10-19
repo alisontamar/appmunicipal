@@ -13,7 +13,7 @@ import {
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
 import { patrullaVigente, zonaDePatrulla, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
-import { formatCoords } from '@/utils/format';
+import { formatCoords, formatHora } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
 
@@ -227,14 +227,38 @@ export function MapScreen() {
     };
   }, []);
 
+  // El mapa solo se monta cuando llega la primera ubicación. Los efectos de abajo
+  // dependen de esto para volver a dibujar el recorrido/checkpoints en cuanto el
+  // mapa existe (antes se ejecutaban con mapRef vacío y el trazo no aparecía hasta
+  // el siguiente punto GPS).
+  const mapaMontado = miUbicacion !== null;
+
   // Actualiza la polyline del recorrido cuando crece durante el turno.
   useEffect(() => {
+    if (!mapaMontado) return;
     const recorrido = enServicio && turno ? turno.recorrido : [];
     mapRef.current?.setRecorrido(recorrido.map((p) => ({ latitud: p.latitud, longitud: p.longitud })));
-  }, [enServicio, turno?.recorrido]);
+  }, [mapaMontado, enServicio, turno?.recorrido]);
+
+  // Marca en el mapa dónde se hizo cada checkpoint (los perdidos no tienen lugar).
+  useEffect(() => {
+    if (!mapaMontado) return;
+    const hechos = enServicio && turno ? turno.checkpoints : [];
+    mapRef.current?.setCheckpoints(
+      hechos
+        .filter((c) => c.estado === 'realizado' && c.ubicacion)
+        .map((c) => ({
+          id: c.id,
+          latitud: c.ubicacion!.latitud,
+          longitud: c.ubicacion!.longitud,
+          title: `Checkpoint ${formatHora(c.creadoEn)}`,
+        })),
+    );
+  }, [mapaMontado, enServicio, turno?.checkpoints]);
 
   // Actualiza los marcadores de incidentes.
   useEffect(() => {
+    if (!mapaMontado) return;
     const incidentes = turno?.incidentes ?? [];
     mapRef.current?.setIncidentes(
       incidentes.map((inc) => ({
@@ -245,7 +269,7 @@ export function MapScreen() {
         title: inc.descripcion,
       })),
     );
-  }, [turno?.incidentes]);
+  }, [mapaMontado, turno?.incidentes]);
 
   return (
     <ScreenContainer statusBar="dark" header={<ScreenHeader title="Mapa" />}>
@@ -266,6 +290,7 @@ export function MapScreen() {
             zona={zona}
             zonaColor="#2563EB"
             recorridoColor="#16A34A"
+            recorridoInicial={enServicio && turno ? turno.recorrido : []}
             height={MAP_HEIGHT}
           />
           <View style={styles.mapControls}>
@@ -377,6 +402,7 @@ export function MapScreen() {
         <View style={styles.legend}>
           <Legend color="#16A34A" label="Tu recorrido (verde)" />
           <Legend color="#2563EB" label="Ruta / zona asignada (azul, interactiva)" />
+          <Legend color="#F59E0B" label="Checkpoint realizado" />
           <Legend color={colors.riskVeryHigh} label="Incidente reportado" />
         </View>
 
