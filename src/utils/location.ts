@@ -68,17 +68,8 @@ export async function obtenerUbicacionActual(): Promise<GeoPoint> {
     if (!serviciosActivos) {
       throw new Error('El GPS del dispositivo está desactivado.');
     }
-    // Camino rápido: una lectura reciente y precisa evita esperar el fix en frío
-    // de getCurrentPositionAsync (varios segundos), que era lo que hacía lento
-    // iniciar y cerrar el servicio.
-    const reciente = await Location.getLastKnownPositionAsync({
-      maxAge: 20_000,
-      requiredAccuracy: 50,
-    }).catch(() => null);
-    if (reciente) return aGeoPoint(reciente);
-
     const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.High,
     });
     return aGeoPoint(pos);
   } catch (error) {

@@ -1,18 +1,13 @@
 import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
-import {
-  DefaultTheme,
-  NavigationContainer,
-  type LinkingOptions,
-  type Theme,
-} from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, Theme } from '@react-navigation/native';
 
 import { colors } from '@/theme';
 import { useAuth } from '@/context/AuthContext';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
-import type { AppStackParamList } from './types';
+import { navigationRef } from './navigationRef';
 
 const navTheme: Theme = {
   ...DefaultTheme,
@@ -23,19 +18,6 @@ const navTheme: Theme = {
     card: colors.brand,
     text: colors.white,
     border: colors.border,
-  },
-};
-
-// Deep links del widget de pantalla de inicio (guardiasgam://incidente y
-// guardiasgam://iniciar-servicio). Solo resuelven con sesión iniciada: si no,
-// el AppNavigator no está montado y el enlace se ignora.
-const linking: LinkingOptions<AppStackParamList> = {
-  prefixes: ['guardiasgam://'],
-  config: {
-    screens: {
-      IncidentCamera: 'incidente',
-      StartServiceCamera: 'iniciar-servicio',
-    },
   },
 };
 
@@ -57,7 +39,7 @@ export function RootNavigator() {
     );
   }
   return (
-    <NavigationContainer theme={navTheme} linking={linking}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as authApi from '@/api/auth';
 import { cargarTokens, SesionExpiradaError } from '@/api/client';
+import { detenerWidget, limpiarSesionWidget } from '@/native/overlay';
 import type { Guardia } from '@/types';
 
 interface AuthState {
@@ -115,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
+    // Sin sesión no debe quedar el widget sobre otras apps ni su copia de sesión.
+    detenerWidget();
+    limpiarSesionWidget();
     setToken(null);
     setGuardia(null);
     void guardarGuardia(null);

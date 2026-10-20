@@ -24,18 +24,11 @@ import {
   obtenerUbicacionActual,
   type SeguimientoUbicacion,
 } from '@/utils/location';
-import {
-  iniciarSeguimientoBackground,
-  detenerSeguimientoBackground,
-  permisoBackgroundOtorgado,
-  seguimientoBackgroundActivo,
-  setPuntoListener,
-} from '@/utils/backgroundLocationTask';
+import { iniciarSeguimientoBackground, detenerSeguimientoBackground, setPuntoListener } from '@/utils/backgroundLocationTask';
 import { borrarCaptura, borrarCapturas, limpiarCapturasHuerfanas } from '@/utils/media';
 import { procesarPuntoGps, reiniciarFiltroGps } from '@/utils/filtroGps';
-import { actualizarWidget } from '@/widget/actualizarWidget';
-import { guardarEstadoWidget } from '@/widget/estadoWidget';
 import { listarBorradores } from '@/utils/borradoresIncidente';
+import { guardarTurnoCache, leerTurnoCache } from '@/utils/turnoCache';
 import {
   encolar,
   hayConexion,
@@ -148,8 +141,8 @@ interface ShiftState {
   revisarRuta: () => Promise<void>;
   /** Trae el historial de turnos finalizados desde el servidor — para pull-to-refresh en Historial. */
   refrescarHistorial: () => Promise<void>;
-  iniciarServicio: (fotoUri: string, ubicacion?: GeoPoint) => Promise<Turno>;
-  cerrarServicio: (ubicacionFin?: GeoPoint) => Promise<Turno>;
+  iniciarServicio: (fotoUri: string) => Promise<Turno>;
+  cerrarServicio: () => Promise<Turno>;
   /**
    * `ubicacion` es opcional: un reporte armado desde un borrador lleva la hora y
    * el lugar de cuando se EMPEZÓ, y no debe pisarlos con los del envío.
@@ -275,6 +268,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   const puestoFijoRef = useRef(false);
   const conectadoAntesRef = useRef<boolean | null>(null);
   const rehidratadoRef = useRef<string | null>(null);
+  // Hasta que se lee la copia guardada, no se escribe el turno (evita borrar la copia al arrancar).
+  const turnoCacheListoRef = useRef(false);
   // null = todavía no se hizo la primera lectura (no avisar en el arranque
   // de la app por una ruta que ya existía de antes).
   const rutaFirmaRef = useRef<{ id: string | null; firma: string } | null>(null);
@@ -477,9 +472,6 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
           });
           return;
         }
-        setAvisoUbicacion(
-          'Sin el permiso de ubicación "Permitir siempre", el recorrido solo se registra con la app abierta. Actívalo en Ajustes > Permisos > Ubicación.',
-        );
         iniciarSeguimientoUbicacion(
           (lectura) => {
             // Filtro anti-deriva: quieto = mismo punto, no suma metros.
@@ -542,49 +534,6 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => () => detenerSeguimiento(), [detenerSeguimiento]);
 
-  // El widget de pantalla de inicio corre sin la app montada: se le deja guardado
-  // si hay servicio en curso (y cuál) y se le pide redibujarse.
-  const enServicioActual = turno?.estado === 'en_servicio';
-  const turnoIdActual = turno?.id ?? null;
-  useEffect(() => {
-    void guardarEstadoWidget({
-      enServicio: enServicioActual,
-      turnoId: enServicioActual ? turnoIdActual : null,
-    }).then(actualizarWidget);
-  }, [enServicioActual, turnoIdActual]);
-
-  // Al volver a la app con un servicio en curso: (1) completa el recorrido con lo
-  // que el servidor recibió mientras la app estaba en segundo plano — el listener
-  // en memoria no se entera de esos puntos si el proceso estuvo suspendido — y
-  // (2) revisa que el seguimiento en segundo plano siga vivo; Android puede
-  // matar el servicio por ahorro de batería y, sin esto, el guardia seguiría
-  // "en servicio" sin que se registre su ubicación.
-  const turnoEnCursoId = turno?.estado === 'en_servicio' ? turno.id : null;
-  useEffect(() => {
-    if (!turnoEnCursoId) return;
-    const alVolver = async () => {
-      try {
-        const r = await turnosApi.obtenerRecorrido(turnoEnCursoId);
-        if (r.puntos.length > 0) {
-          setTurno((prev) => {
-            if (!prev || prev.id !== turnoEnCursoId || prev.estado !== 'en_servicio') return prev;
-            if (r.puntos.length <= prev.recorrido.length) return prev;
-            return { ...prev, recorrido: r.puntos, distanciaMetros: r.distanciaMetros ?? prev.distanciaMetros };
-          });
-        }
-      } catch {
-        // sin señal: se queda con lo que ya hay en memoria
-      }
-      if (!(await seguimientoBackgroundActivo()) && (await permisoBackgroundOtorgado())) {
-        iniciarSeguimiento(turnoEnCursoId);
-      }
-    };
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void alVolver();
-    });
-    return () => sub.remove();
-  }, [turnoEnCursoId, iniciarSeguimiento]);
-
   // Si el proceso de la app murió mientras había un servicio en curso (p. ej. Android
   // lo mata al salir), al reabrir la app AuthContext rehidrata la sesión pero este
   // contexto arrancaba con turno=null aunque en el backend el turno seguía
@@ -595,10 +544,31 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     rehidratadoRef.current = guardia.id;
 
     (async () => {
+      // 1) Turno guardado en el teléfono: se muestra de inmediato, sin esperar la red.
+      const cacheado = await leerTurnoCache(guardia.id);
+      turnoCacheListoRef.current = true;
+      if (cacheado) {
+        setTurno((prev) => prev ?? cacheado);
+        reiniciarFiltroGps(cacheado.recorrido[cacheado.recorrido.length - 1] ?? null);
+        iniciarSeguimiento(cacheado.id);
+        proximoCheckpointRef.current = proximoCheckpointEn();
+        proximaPresenciaRef.current = proximaPresenciaEn();
+        checkpointVenceRef.current = null;
+        setCheckpointPendiente(false);
+      }
+
+      // 2) El servidor es la fuente de verdad: confirma o corrige la copia.
       try {
         const turnos = await turnosApi.listarTurnos();
         const activo = turnos.find((t) => t.estado === 'en_servicio');
-        if (!activo) return;
+        if (!activo) {
+          // No hay turno abierto en el servidor: la copia ya no vale.
+          if (cacheado) {
+            detenerSeguimiento();
+            setTurno((prev) => (prev?.id === cacheado.id ? null : prev));
+          }
+          return;
+        }
 
         let recorrido = activo.recorrido;
         let distanciaMetros = activo.distanciaMetros;
@@ -628,9 +598,22 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         }
 
         const restaurado: Turno = { ...activo, recorrido, distanciaMetros, incidentes, mandados };
+        // Si la copia era de otro turno, el servidor manda: se reemplaza y se reinicia el seguimiento.
+        const cambiaTurno = Boolean(cacheado && cacheado.id !== restaurado.id);
+        if (cambiaTurno) detenerSeguimiento();
         let aplicado = false;
         setTurno((prev) => {
-          if (prev) return prev; // ya se inicio un turno nuevo en esta misma sesion
+          if (prev && prev.id === restaurado.id) {
+            // Mismo turno que la copia: se actualizan los datos del servidor sin perder el recorrido local.
+            return {
+              ...prev,
+              distanciaMetros: restaurado.distanciaMetros,
+              incidentes: restaurado.incidentes,
+              mandados: restaurado.mandados,
+              recorrido: prev.recorrido.length >= restaurado.recorrido.length ? prev.recorrido : restaurado.recorrido,
+            };
+          }
+          if (prev && !cambiaTurno) return prev; // ya se inicio un turno nuevo en esta misma sesion
           aplicado = true;
           return restaurado;
         });
@@ -646,7 +629,13 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
         console.warn('[Shift] no se pudo verificar si habia un servicio activo:', e);
       }
     })();
-  }, [guardia, iniciarSeguimiento]);
+  }, [guardia, iniciarSeguimiento, detenerSeguimiento]);
+
+  // Guarda el turno en curso en el teléfono en cada cambio, para poder mostrarlo al reabrir la app.
+  useEffect(() => {
+    if (!guardia || !turnoCacheListoRef.current) return;
+    void guardarTurnoCache(guardia.id, turno);
+  }, [turno, guardia]);
 
   const ultimaUbicacion = useCallback((): Promise<GeoPoint> => obtenerUbicacionActual(), []);
 
@@ -676,9 +665,8 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
   }, [guardia, refrescarHistorial]);
 
   const iniciarServicio = useCallback(
-    async (fotoUri: string, ubicacionPrevia?: GeoPoint) => {
-      // La pantalla de confirmación ya leyó el GPS: reusarlo evita otra espera.
-      const ubicacion = ubicacionPrevia ?? (await obtenerUbicacionActual());
+    async (fotoUri: string) => {
+      const ubicacion = await obtenerUbicacionActual();
       const nuevo = await turnosApi.iniciarServicio(fotoUri, ubicacion);
       setTurno(nuevo);
       // El selfie ya se subió a Supabase dentro de iniciarServicio.
@@ -705,48 +693,36 @@ export function ShiftProvider({ children }: { children: React.ReactNode }) {
     [iniciarSeguimiento, enviarUbicacionOEncolar],
   );
 
-  const cerrarServicio = useCallback(
-    async (ubicacionPrevia?: GeoPoint) => {
-      if (!turno) throw new Error('No hay turno en curso');
-      // El tracking se detiene sin esperarlo (apagar el foreground service
-      // puede tardar) y la ubicación de cierre ya viene de la pantalla.
-      detenerSeguimiento();
-      reiniciarFiltroGps(null);
-      proximoCheckpointRef.current = null;
-      proximaPresenciaRef.current = null;
-      checkpointVenceRef.current = null;
-      setCheckpointPendiente(false);
-      setPresenciaPendiente(false);
-      const ubicacionFin = ubicacionPrevia ?? (await obtenerUbicacionActual());
-      const finalizado = await turnosApi.cerrarServicio(turno, ubicacionFin);
-      setTurno(finalizado);
-      setHistorialTurnos((prev) => [finalizado, ...prev]);
+  const cerrarServicio = useCallback(async () => {
+    if (!turno) throw new Error('No hay turno en curso');
+    detenerSeguimiento();
+    reiniciarFiltroGps(null);
+    proximoCheckpointRef.current = null;
+    proximaPresenciaRef.current = null;
+    checkpointVenceRef.current = null;
+    setCheckpointPendiente(false);
+    setPresenciaPendiente(false);
+    const ubicacionFin = await obtenerUbicacionActual();
+    const finalizado = await turnosApi.cerrarServicio(turno, ubicacionFin);
+    setTurno(finalizado);
+    setHistorialTurnos((prev) => [finalizado, ...prev]);
 
-      // Última oportunidad de vaciar la cola: si el guardia cerró el turno con
-      // registros sin enviar, hay que decirlo. Antes el cierre no miraba la cola
-      // en absoluto, así que una jornada completa sin señal se perdía en silencio
-      // y el guardia quedaba como que no trabajó. Corre en segundo plano: antes se
-      // esperaba aquí y el cierre tardaba lo que tardara la cola en vaciarse.
-      void (async () => {
-        try {
-          await sincronizarAhora(true);
-          const sinEnviar = (await listarPendientes()).filter((i) => i.tipo !== 'ubicacion');
-          if (sinEnviar.length > 0) {
-            Alert.alert(
-              'Quedan registros sin enviar',
-              `${sinEnviar.length} registro(s) siguen guardados en este teléfono y se enviarán solos apenas tengas señal. No se pierden: están a salvo acá.`,
-              [{ text: 'Entendido' }],
-            );
-          }
-        } catch (e) {
-          console.warn('[Shift] no se pudo vaciar la cola al cerrar el turno:', e);
-        }
-      })();
+    // Última oportunidad de vaciar la cola: si el guardia cerró el turno con
+    // registros sin enviar, hay que decirlo. Antes el cierre no miraba la cola
+    // en absoluto, así que una jornada completa sin señal se perdía en silencio
+    // y el guardia quedaba como que no trabajó.
+    await sincronizarAhora(true);
+    const sinEnviar = (await listarPendientes()).filter((i) => i.tipo !== 'ubicacion');
+    if (sinEnviar.length > 0) {
+      Alert.alert(
+        'Quedan registros sin enviar',
+        `${sinEnviar.length} registro(s) siguen guardados en este teléfono y se enviarán solos apenas tengas señal. No se pierden: están a salvo acá.`,
+        [{ text: 'Entendido' }],
+      );
+    }
 
-      return finalizado;
-    },
-    [turno, detenerSeguimiento, sincronizarAhora],
-  );
+    return finalizado;
+  }, [turno, detenerSeguimiento, sincronizarAhora]);
 
   const agregarIncidente = useCallback<ShiftState['agregarIncidente']>(
     async (data) => {

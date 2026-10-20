@@ -23,6 +23,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { esSesionDemo } from '@/utils/modoDemo';
 
 const API_PORT = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_PORT) || '4001';
 const PROD_API_URL = 'https://api.sistec-unifranz.com/api';
@@ -174,6 +175,11 @@ async function refrescarSesion(): Promise<boolean> {
  * Si recibe 401 y hay refreshToken, renueva la sesion y reintenta una vez.
  */
 export async function request<T>(path: string, init: RequestInit = {}, _reintento = false): Promise<T> {
+  // Sesión demo: no hay servidor. Se responde como "sin conexión" para que cada
+  // flujo use su respaldo offline (cola, borradores) en vez de llamar a la red.
+  if (esSesionDemo(accessToken)) {
+    throw new ApiError('Modo demo: sin servidor.', 'NETWORK_ERROR', 0);
+  }
   const headers: Record<string, string> = {
     Accept: 'application/json',
     ...(init.body ? { 'Content-Type': 'application/json' } : {}),

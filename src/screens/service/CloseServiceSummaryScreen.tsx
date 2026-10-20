@@ -32,7 +32,7 @@ export function CloseServiceSummaryScreen({ navigation }: Props) {
   const confirmar = async () => {
     setBusy(true);
     try {
-      await cerrarServicio(cierre ?? undefined);
+      await cerrarServicio();
       navigation.replace('ServiceFinished');
     } finally {
       setBusy(false);

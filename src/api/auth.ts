@@ -1,5 +1,6 @@
-import { ApiError, guardarTokens, limpiarTokens, request } from './client';
+import { ApiError, guardarTokens, limpiarTokens, request, tokenActual } from './client';
 import type { Guardia } from '@/types';
+import { DEMO_GUARDIA, DEMO_PASSWORD, DEMO_TOKEN, DEMO_USUARIO, MODO_DEMO, esSesionDemo } from '@/utils/modoDemo';
 
 export interface LoginResult {
   token: string;
@@ -63,6 +64,10 @@ async function persistirSesion(s: SesionDTO | null | undefined): Promise<LoginRe
 
 /** RF-APP-01 — login con usuario y contraseña. Deja la sesión guardada. */
 export async function login(usuario: string, password: string): Promise<LoginResult> {
+  if (MODO_DEMO && usuario === DEMO_USUARIO && password === DEMO_PASSWORD) {
+    await guardarTokens(DEMO_TOKEN, DEMO_TOKEN);
+    return { token: DEMO_TOKEN, guardia: DEMO_GUARDIA };
+  }
   const s = await request<SesionDTO>('/mobile/auth/login', {
     method: 'POST',
     body: JSON.stringify({ usuario, password }),
@@ -88,6 +93,7 @@ export async function activarCuenta(
 
 /** Guardia autenticado actual (se usa al reabrir la app para rehidratar la sesión). */
 export async function me(): Promise<Guardia> {
+  if (esSesionDemo(tokenActual())) return DEMO_GUARDIA;
   const r = await request<{ guardia: GuardiaDTO }>('/mobile/auth/me');
   return mapGuardia(r.guardia);
 }
