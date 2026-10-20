@@ -26,11 +26,11 @@ const ICONS: Record<keyof TabsParamList, keyof typeof Ionicons.glyphMap> = {
 /**
  * Tab bar flotante tipo "píldora": la pestaña activa se expande en una
  * cápsula blanca con ícono + etiqueta; las inactivas muestran solo el ícono.
- * La transición al tocar es suave (cápsula + etiqueta animadas).
  *
  * Al centro hay un botón sobresaliente de "Registrar incidente" que abre directo
- * la cámara. Está dentro del área de la barra (no fuera de ella) porque Android
- * no entrega toques a elementos que se salen de los límites de su contenedor.
+ * la cámara. Las pestañas se reparten en dos mitades de ancho fijo separadas por
+ * un hueco del tamaño del botón: así una pestaña activa (que se expande con su
+ * etiqueta) nunca se mete debajo del botón central ni le tapa el menú.
  */
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -54,47 +54,53 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
     stack.navigate('IncidentCamera');
   };
 
+  const renderTab = (route: (typeof state.routes)[number], index: number) => {
+    const { options } = descriptors[route.key];
+    const label =
+      typeof options.tabBarLabel === 'string'
+        ? options.tabBarLabel
+        : options.title ?? route.name;
+    const focused = state.index === index;
+
+    const onPress = () => {
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (!focused && !event.defaultPrevented) {
+        navigation.navigate(route.name as never);
+      }
+    };
+
+    const onLongPress = () => {
+      navigation.emit({ type: 'tabLongPress', target: route.key });
+    };
+
+    return (
+      <TabItem
+        key={route.key}
+        focused={focused}
+        icon={ICONS[route.name as keyof TabsParamList] ?? 'ellipse'}
+        label={label}
+        onPress={onPress}
+        onLongPress={onLongPress}
+      />
+    );
+  };
+
+  // Mitad izquierda y derecha: el hueco central queda reservado para el botón.
+  const mitad = Math.ceil(state.routes.length / 2);
+  const izquierda = state.routes.slice(0, mitad).map((route, i) => renderTab(route, i));
+  const derecha = state.routes.slice(mitad).map((route, i) => renderTab(route, i + mitad));
+
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 10) + 4 }]}>
       <View style={styles.stage}>
         <View style={styles.bar}>
-          {state.routes.map((route, index) => {
-            const { options } = descriptors[route.key];
-            const label =
-              typeof options.tabBarLabel === 'string'
-                ? options.tabBarLabel
-                : options.title ?? route.name;
-            const focused = state.index === index;
-
-            const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!focused && !event.defaultPrevented) {
-                navigation.navigate(route.name as never);
-              }
-            };
-
-            const onLongPress = () => {
-              navigation.emit({ type: 'tabLongPress', target: route.key });
-            };
-
-            return (
-              <React.Fragment key={route.key}>
-                {/* Hueco bajo el botón central, entre las dos primeras y las dos últimas pestañas. */}
-                {index === 2 ? <View style={styles.centerGap} /> : null}
-                <TabItem
-                  focused={focused}
-                  icon={ICONS[route.name as keyof TabsParamList] ?? 'ellipse'}
-                  label={label}
-                  onPress={onPress}
-                  onLongPress={onLongPress}
-                />
-              </React.Fragment>
-            );
-          })}
+          <View style={styles.half}>{izquierda}</View>
+          <View style={styles.centerGap} />
+          <View style={styles.half}>{derecha}</View>
         </View>
 
         <View style={styles.centerWrap} pointerEvents="box-none">
@@ -109,19 +115,19 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             }
           >
             <Walkthroughable style={styles.centerTarget}>
-            <Pressable
-              onPress={abrirIncidente}
-              accessibilityRole="button"
-              accessibilityLabel="Registrar incidente"
-              hitSlop={6}
-              style={({ pressed }) => [
-                styles.centerButton,
-                !enServicio && styles.centerButtonOff,
-                pressed && styles.centerPressed,
-              ]}
-            >
-              <Ionicons name="alert" size={30} color={colors.white} />
-            </Pressable>
+              <Pressable
+                onPress={abrirIncidente}
+                accessibilityRole="button"
+                accessibilityLabel="Registrar incidente"
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.centerButton,
+                  !enServicio && styles.centerButtonOff,
+                  pressed && styles.centerPressed,
+                ]}
+              >
+                <Ionicons name="alert" size={30} color={colors.white} />
+              </Pressable>
             </Walkthroughable>
           </CopilotStep>
         </View>
@@ -170,7 +176,7 @@ function TabItem({ focused, icon, label, onPress, onLongPress }: TabItemProps) {
           styles.item,
           {
             backgroundColor,
-            paddingHorizontal: anim.interpolate({ inputRange: [0, 1], outputRange: [10, 14] }),
+            paddingHorizontal: anim.interpolate({ inputRange: [0, 1], outputRange: [10, 12] }),
           },
         ]}
       >
@@ -197,8 +203,9 @@ function TabItem({ focused, icon, label, onPress, onLongPress }: TabItemProps) {
             styles.label,
             {
               opacity: anim,
-              maxWidth: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 96] }),
-              marginLeft: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }),
+              // Tope de la etiqueta: lo justo para que la pestaña activa no invada el hueco central.
+              maxWidth: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 68] }),
+              marginLeft: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 6] }),
             },
           ]}
         >
@@ -220,7 +227,6 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: colors.navy900,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
@@ -230,6 +236,16 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
+  },
+  // Cada mitad ocupa un ancho fijo (flex: 1) y centra sus pestañas; el hueco central
+  // tiene el mismo ancho que el botón, así las pestañas nunca quedan debajo de él.
+  half: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   centerGap: { width: CENTER_SIZE },
   centerWrap: {

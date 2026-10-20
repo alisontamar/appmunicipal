@@ -175,21 +175,3 @@ export async function detenerSeguimientoBackground(): Promise<void> {
     console.warn('[GPS background] no se pudo detener:', e);
   }
 }
-/** True si la tarea de ubicación en segundo plano está corriendo ahora mismo. */
-export async function seguimientoBackgroundActivo(): Promise<boolean> {
-  try {
-    return await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-  } catch {
-    return false;
-  }
-}
-
-/** True si el guardia ya dio "Permitir siempre" (para reiniciar sin volver a preguntarle). */
-export async function permisoBackgroundOtorgado(): Promise<boolean> {
-  try {
-    const { status } = await Location.getBackgroundPermissionsAsync();
-    return status === Location.PermissionStatus.GRANTED;
-  } catch {
-    return false;
-  }
-}

@@ -13,7 +13,7 @@ import {
 } from '@/components';
 import { useShift } from '@/context/ShiftContext';
 import { patrullaVigente, zonaDePatrulla, trazadoAZona, type ZonaPunto } from '@/api/patrullas';
-import { formatCoords, formatHora } from '@/utils/format';
+import { formatCoords } from '@/utils/format';
 import type { GeoPoint } from '@/types';
 import { iniciarSeguimientoUbicacion, obtenerUbicacionActual } from '@/utils/location';
 
@@ -132,9 +132,9 @@ export function MapScreen() {
     }
     let cancelado = false;
     setCargandoCalles(true);
-    // Mostrar el nombre de la ruta de inmediato mientras llegan las calles (no esperar 2-3s en blanco)
-    const fallbackInmediato = patrullaInfo?.rutaNombre || patrullaInfo?.nombre;
-    if (fallbackInmediato) setCalles([fallbackInmediato]);
+    // Solo nombres de calle reales: el nombre de la ruta no es una calle.
+    // Antes se mostraba como primera "calle" (p. ej. "mmm") mientras llegaban las reales.
+    setCalles([]);
 
     (async () => {
       const puntos = fuenteCalles.slice(0, 4);
@@ -170,18 +170,8 @@ export function MapScreen() {
         for (const c of resultados) {
           if (c && !nombres.includes(c.trim())) nombres.push(c.trim());
         }
-        if (nombres.length === 0) {
-          // Si todo falló pero ya mostramos el fallback, mantenerlo
-          if (!fallbackInmediato) {
-            const fb = patrullaInfo?.rutaNombre || patrullaInfo?.nombre || 'Ruta asignada';
-            nombres.push(fb);
-          } else if (fallbackInmediato && !nombres.includes(fallbackInmediato)) {
-            // Ya está mostrado, no duplicar
-          }
-        } else if (fallbackInmediato && nombres[0] !== fallbackInmediato && !nombres.includes(fallbackInmediato)) {
-          // Mantener el nombre de la ruta primero si no vino en el reverse
-          nombres.unshift(fallbackInmediato);
-        }
+        // Si no hay nombres (sin señal o sin datos), la tarjeta muestra el aviso del
+        // contorno en vez de inventar calles.
         // Limitar a 4 para que sea instantáneo
         const recorte = nombres.slice(0, 4);
         setCalles(recorte);
@@ -227,38 +217,14 @@ export function MapScreen() {
     };
   }, []);
 
-  // El mapa solo se monta cuando llega la primera ubicación. Los efectos de abajo
-  // dependen de esto para volver a dibujar el recorrido/checkpoints en cuanto el
-  // mapa existe (antes se ejecutaban con mapRef vacío y el trazo no aparecía hasta
-  // el siguiente punto GPS).
-  const mapaMontado = miUbicacion !== null;
-
   // Actualiza la polyline del recorrido cuando crece durante el turno.
   useEffect(() => {
-    if (!mapaMontado) return;
     const recorrido = enServicio && turno ? turno.recorrido : [];
     mapRef.current?.setRecorrido(recorrido.map((p) => ({ latitud: p.latitud, longitud: p.longitud })));
-  }, [mapaMontado, enServicio, turno?.recorrido]);
-
-  // Marca en el mapa dónde se hizo cada checkpoint (los perdidos no tienen lugar).
-  useEffect(() => {
-    if (!mapaMontado) return;
-    const hechos = enServicio && turno ? turno.checkpoints : [];
-    mapRef.current?.setCheckpoints(
-      hechos
-        .filter((c) => c.estado === 'realizado' && c.ubicacion)
-        .map((c) => ({
-          id: c.id,
-          latitud: c.ubicacion!.latitud,
-          longitud: c.ubicacion!.longitud,
-          title: `Checkpoint ${formatHora(c.creadoEn)}`,
-        })),
-    );
-  }, [mapaMontado, enServicio, turno?.checkpoints]);
+  }, [enServicio, turno?.recorrido]);
 
   // Actualiza los marcadores de incidentes.
   useEffect(() => {
-    if (!mapaMontado) return;
     const incidentes = turno?.incidentes ?? [];
     mapRef.current?.setIncidentes(
       incidentes.map((inc) => ({
@@ -269,7 +235,7 @@ export function MapScreen() {
         title: inc.descripcion,
       })),
     );
-  }, [mapaMontado, turno?.incidentes]);
+  }, [turno?.incidentes]);
 
   return (
     <ScreenContainer statusBar="dark" header={<ScreenHeader title="Mapa" />}>
@@ -290,7 +256,6 @@ export function MapScreen() {
             zona={zona}
             zonaColor="#2563EB"
             recorridoColor="#16A34A"
-            recorridoInicial={enServicio && turno ? turno.recorrido : []}
             height={MAP_HEIGHT}
           />
           <View style={styles.mapControls}>
@@ -402,7 +367,6 @@ export function MapScreen() {
         <View style={styles.legend}>
           <Legend color="#16A34A" label="Tu recorrido (verde)" />
           <Legend color="#2563EB" label="Ruta / zona asignada (azul, interactiva)" />
-          <Legend color="#F59E0B" label="Checkpoint realizado" />
           <Legend color={colors.riskVeryHigh} label="Incidente reportado" />
         </View>
 

@@ -7,6 +7,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ShiftProvider } from '@/context/ShiftContext';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { RouteChangeWatcher } from '@/components';
+import { WidgetOverlayBridge } from '@/components/WidgetOverlayBridge';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <ShiftProvider>
             <StatusBar style="light" />
             <RouteChangeWatcher />
+            <WidgetOverlayBridge />
             <RootNavigator />
           </ShiftProvider>
         </AuthProvider>

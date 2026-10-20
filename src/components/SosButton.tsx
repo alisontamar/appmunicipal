@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,42 +7,52 @@ import { useShift } from '@/context/ShiftContext';
 import { autenticarConBiometria, biometriaDisponible } from '@/utils/biometria';
 import { useTabBarHeight } from '@/navigation/tabBarMetrics';
 import { CopilotStep, Walkthroughable } from '@/tutorial/Tutorial';
+import { leerUltimoSosWidget } from '@/native/overlay';
+import { VENTANA_SOS_WIDGET_MS, suscribirSosWidget } from '@/utils/sosWidgetEvento';
 
 // Separación entre el borde superior del tab bar y el borde inferior del botón.
 const GAP_SOBRE_TAB_BAR = 20;
+// Verde del estado "atendido" (el SOS ya lo gestionó el centro de monitoreo).
+const VERDE_ATENDIDO = '#16A34A';
+// Ritmo de reintento mientras un SOS espera en la cola por falta de señal.
+const REINTENTO_COLA_MS = 15_000;
 
 export function SosButton() {
-  const { enServicio, dispararSos } = useShift();
+  const { enServicio, dispararSos, sincronizarAhora, pendientesSincronizar } = useShift();
   const [enviando, setEnviando] = useState(false);
   const [sosActivo, setSosActivo] = useState(false);
+  // SOS guardado en el teléfono porque no había señal: todavía NO llegó a la web.
+  const [enCola, setEnCola] = useState(false);
   const [atendido, setAtendido] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Solo se da por atendido un SOS que el servidor mostró primero como emergencia.
+  // Antes, cualquier respuesta distinta de 'emergencia' (incluida la que llega antes
+  // de que el SOS se haya recibido) se tomaba como atendida y el guardia veía
+  // "ATENDIDO" sin que el operador hubiera visto nada.
+  const vistoEnEmergenciaRef = useRef(false);
+  // Evita marcar "enviado" por la cola vacía antes de que el SOS entrara en ella.
+  const pendienteVistoRef = useRef(false);
   const tabBarHeight = useTabBarHeight();
 
   // Cuando el operador marca como atendido (desde la web), el backend limpia esSos.
   // Hacemos polling al endpoint de estado para detectar el cambio y avisar
-  // "Solicitud atendida — ayuda en camino/ya atendida" en vez de dejar el botón pulsado para siempre.
+  // "Solicitud atendida" en vez de dejar el botón pulsado para siempre.
   //
-  // La app no tiene un canal de push en vivo (socket) todavía — el Operador
-  // resuelve en la web y aquí solo nos enteramos cuando este polling
-  // vuelve a preguntar. Bug reportado: con 15s de intervalo, el guardia
-  // percibía que "tardaba muchísimo" en saber que ya lo habían atendido.
-  // 4s es un compromiso razonable sin meter socket.io-client en la app
-  // (ese sería el fix real de fondo — este intervalo es un parche mientras
-  // tanto, el request es liviano y solo corre mientras el SOS está activo).
+  // La app no tiene un canal de push en vivo (socket) todavía. Este intervalo es un
+  // parche: el fix de fondo sería un socket.io-client en la app.
   useEffect(() => {
-    if (!sosActivo || atendido) return;
+    if (!sosActivo || atendido || enCola) return;
     let cancelado = false;
     const id = setInterval(async () => {
       try {
-        // Intenta consultar el estado SOS del guardia; si no existe el endpoint, se ignora silenciosamente
         const { request } = await import('@/api/client');
         const data: any = await request('/telemetry/estado').catch(() => null);
-        // estadoOperativo !== 'emergencia' es la señal más directa (la
-        // misma que setEstadoOperativo actualiza de forma atómica al
-        // resolver) — se chequea además de esSos/sosEstado por si acaso,
-        // no en su lugar, para no depender de una sola fuente.
-        const resuelto = data && (data.estadoOperativo !== 'emergencia' || (data.esSos === false && data.sosEstado === 'atendido'));
+        if (data?.estadoOperativo === 'emergencia') vistoEnEmergenciaRef.current = true;
+        const resuelto = Boolean(
+          vistoEnEmergenciaRef.current &&
+            data &&
+            (data.estadoOperativo !== 'emergencia' || (data.esSos === false && data.sosEstado === 'atendido')),
+        );
         if (!cancelado && resuelto) {
           setAtendido(true);
           setSosActivo(false);
@@ -51,7 +61,7 @@ export function SosButton() {
         }
       } catch {}
     }, 4000);
-    // Auto-atendido simulado a los 90s si el backend no responde (evita botón pegado forever)
+    // Respaldo a los 90s si el backend no confirma nada (evita botón pegado para siempre).
     const timeout = setTimeout(() => {
       if (!cancelado && sosActivo && !atendido) {
         setAtendido(true);
@@ -64,7 +74,7 @@ export function SosButton() {
       clearInterval(id);
       clearTimeout(timeout);
     };
-  }, [sosActivo, atendido]);
+  }, [sosActivo, atendido, enCola]);
 
   // Una vez confirmado como atendido, volver a SOS normal tras 6s para poder enviar de nuevo
   useEffect(() => {
@@ -74,6 +84,47 @@ export function SosButton() {
     }, 6000);
     return () => clearTimeout(t);
   }, [atendido]);
+
+  // SOS que mandó el widget (con la app cerrada o en segundo plano): se muestra como ACTIVO
+  // si es reciente, así el guardia ve que ya salió y el botón sigue el estado real del operador.
+  useEffect(() => {
+    let ultimoTs = 0;
+    const aplicar = (ts: number) => {
+      if (ts <= ultimoTs || Date.now() - ts > VENTANA_SOS_WIDGET_MS) return;
+      ultimoTs = ts;
+      vistoEnEmergenciaRef.current = false;
+      setEnCola(false);
+      setAtendido(false);
+      setSosActivo(true);
+    };
+    leerUltimoSosWidget().then(aplicar);
+    return suscribirSosWidget(aplicar);
+  }, []);
+
+  // SOS en cola: se reintenta solo hasta que salga, sin esperar el backoff normal.
+  useEffect(() => {
+    if (!enCola) return;
+    const id = setInterval(() => {
+      sincronizarAhora(true).catch(() => {});
+    }, REINTENTO_COLA_MS);
+    return () => clearInterval(id);
+  }, [enCola, sincronizarAhora]);
+
+  // La cola se vació después de haber tenido algo pendiente: el SOS ya salió a la web.
+  useEffect(() => {
+    if (!enCola) return;
+    if (pendientesSincronizar > 0) {
+      pendienteVistoRef.current = true;
+      return;
+    }
+    if (pendienteVistoRef.current) {
+      pendienteVistoRef.current = false;
+      setEnCola(false);
+      setSosActivo(false);
+      setAtendido(false);
+      Alert.alert('SOS enviado', 'Se recuperó la señal y tu alerta ya llegó al centro de monitoreo.');
+    }
+  }, [enCola, pendientesSincronizar]);
 
   if (!enServicio) return null;
 
@@ -86,6 +137,7 @@ export function SosButton() {
           style: 'destructive',
           onPress: () => {
             setSosActivo(false);
+            setEnCola(false);
             setAtendido(false);
           },
         },
@@ -106,10 +158,24 @@ export function SosButton() {
   const enviar = async () => {
     setEnviando(true);
     try {
-      await dispararSos();
+      const alerta = await dispararSos();
+      // dispararSos devuelve un registro local ('local-…') cuando no hubo señal y lo dejó en cola.
+      const quedoEnCola = alerta.id.startsWith('local-');
+      vistoEnEmergenciaRef.current = false;
+      pendienteVistoRef.current = false;
       setSosActivo(true);
       setAtendido(false);
-      Alert.alert('¡SOS Enviado!', 'Ayuda en camino — tu ubicación fue enviada al centro de monitoreo. Mantén tu teléfono encendido, un operador ya ve tu alerta en el mapa.');
+      if (quedoEnCola) {
+        setEnCola(true);
+        sincronizarAhora(true).catch(() => {});
+        Alert.alert(
+          'Sin señal',
+          'Tu SOS quedó guardado en el teléfono y se enviará apenas recupere la conexión. Mantén la app abierta si puedes.',
+        );
+      } else {
+        setEnCola(false);
+        Alert.alert('¡SOS Enviado!', 'Ayuda en camino — tu ubicación fue enviada al centro de monitoreo. Mantén tu teléfono encendido, un operador ya ve tu alerta en el mapa.');
+      }
     } catch (e) {
       Alert.alert('No se pudo enviar', e instanceof Error ? e.message : 'Intente nuevamente.');
     } finally {
@@ -127,35 +193,41 @@ export function SosButton() {
         text="Botón SOS: en una emergencia púlsalo y el centro de monitoreo recibe tu ubicación al instante."
       >
         <Walkthroughable style={[styles.sosWrap, { bottom: tabBarHeight + GAP_SOBRE_TAB_BAR }]}>
-      <Pressable
-        style={({ pressed }) => [
-          styles.boton,
-          isPulsado && styles.botonActivo,
-          pressed && styles.presionado,
-        ]}
-        onPress={confirmarYEnviar}
-        disabled={enviando}
-      >
-        {enviando ? (
-          <ActivityIndicator color={colors.white} />
-        ) : sosActivo ? (
-          <>
-            <View style={styles.pulso} />
-            <Ionicons name="radio" size={20} color={colors.white} />
-            <Text style={styles.texto}>ACTIVO</Text>
-          </>
-        ) : atendido ? (
-          <>
-            <Ionicons name="checkmark-circle" size={22} color={colors.white} />
-            <Text style={styles.texto}>ATENDIDO</Text>
-          </>
-        ) : (
-          <>
-            <Ionicons name="alert-circle" size={22} color={colors.white} />
-            <Text style={styles.texto}>SOS</Text>
-          </>
-        )}
-      </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.boton,
+              isPulsado && styles.botonActivo,
+              atendido && styles.botonAtendido,
+              pressed && styles.presionado,
+            ]}
+            onPress={confirmarYEnviar}
+            disabled={enviando}
+          >
+            {enviando ? (
+              <ActivityIndicator color={colors.white} />
+            ) : atendido ? (
+              <>
+                <Ionicons name="checkmark-circle" size={22} color={colors.white} />
+                <Text style={styles.texto}>ATENDIDO</Text>
+              </>
+            ) : enCola ? (
+              <>
+                <Ionicons name="cloud-offline" size={20} color={colors.white} />
+                <Text style={styles.texto}>EN COLA</Text>
+              </>
+            ) : sosActivo ? (
+              <>
+                <View style={styles.pulso} />
+                <Ionicons name="radio" size={20} color={colors.white} />
+                <Text style={styles.texto}>ACTIVO</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="alert-circle" size={22} color={colors.white} />
+                <Text style={styles.texto}>SOS</Text>
+              </>
+            )}
+          </Pressable>
         </Walkthroughable>
       </CopilotStep>
 
@@ -190,7 +262,8 @@ export function SosButton() {
 }
 
 const styles = StyleSheet.create({
-  sosWrap: { position: 'absolute', right: 20, width: 64, height: 64 },
+  // Lado izquierdo: en el derecho tapaba "Enviar reporte" y el borde de los formularios.
+  sosWrap: { position: 'absolute', left: 20, width: 64, height: 64 },
   boton: {
     backgroundColor: colors.danger,
     width: 64,
@@ -210,6 +283,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#B71C1C',
     borderWidth: 3,
     borderColor: '#FFEBEE',
+    elevation: 10,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+  },
+  botonAtendido: {
+    backgroundColor: VERDE_ATENDIDO,
+    borderWidth: 3,
+    borderColor: '#DCFCE7',
     elevation: 10,
     shadowOpacity: 0.5,
     shadowRadius: 10,

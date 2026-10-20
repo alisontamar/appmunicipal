@@ -77,23 +77,7 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ],
-      [
-        "react-native-android-widget",
-        {
-          "widgets": [
-            {
-              "name": "GuardiaAcciones",
-              "label": "Acciones rápidas",
-              "description": "SOS, registrar incidente e iniciar servicio",
-              "minWidth": "180dp",
-              "minHeight": "60dp",
-              "targetCellWidth": 4,
-              "targetCellHeight": 1,
-              "resizeMode": "horizontal"
-            }
-          ]
-        }
-      ]
+      "./plugins/withGamcOverlay"
     ],
     "extra": {
       "eas": {

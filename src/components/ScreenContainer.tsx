@@ -64,7 +64,9 @@ export function ScreenContainer({
         >
           <ScrollView
             ref={scrollRef}
-            contentContainerStyle={styles.scrollContent}
+            // Margen inferior: el último botón del formulario (Enviar reporte, Guardar borrador)
+            // tiene que poder subir por encima de la barra de navegación del sistema.
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.xl }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             refreshControl={

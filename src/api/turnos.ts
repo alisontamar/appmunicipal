@@ -1,5 +1,6 @@
-import { request } from './client';
+import { request, tokenActual } from './client';
 import { subirEvidencia } from '@/utils/storage';
+import { DEMO_GUARDIA, esSesionDemo } from '@/utils/modoDemo';
 import type { GeoPoint, ShiftStatus, Turno } from '@/types';
 
 /** Forma del turno que devuelve el backend. */
@@ -56,6 +57,21 @@ function mapTurno(d: TurnoDTO): Turno {
 
 /** RF-APP-03 — iniciar servicio: selfie + GPS + hora de inicio. */
 export async function iniciarServicio(fotoUri: string, ubicacion: GeoPoint): Promise<Turno> {
+  if (esSesionDemo(tokenActual())) {
+    return {
+      id: `demo-${Date.now()}`,
+      guardiaId: DEMO_GUARDIA.id,
+      estado: 'en_servicio',
+      fotoInicioUrl: fotoUri,
+      ubicacionInicio: ubicacion,
+      horaInicio: ubicacion.timestamp,
+      distanciaMetros: 0,
+      recorrido: [ubicacion],
+      incidentes: [],
+      mandados: [],
+      checkpoints: [],
+    };
+  }
   const selfieUrl = await subirEvidencia(fotoUri, 'selfies');
   const d = await request<TurnoDTO>('/turnos', {
     method: 'POST',
@@ -99,6 +115,9 @@ export async function enviarUbicacion(turnoId: string, p: GeoPoint): Promise<{ o
 
 /** RF-APP-07 — cerrar servicio. El backend calcula la distancia total del turno. */
 export async function cerrarServicio(turno: Turno, ubicacionFin: GeoPoint): Promise<Turno> {
+  if (esSesionDemo(tokenActual())) {
+    return { ...turno, estado: 'finalizado', ubicacionFin, horaFin: ubicacionFin.timestamp };
+  }
   const d = await request<TurnoDTO>(`/turnos/${turno.id}/cerrar`, {
     method: 'PATCH',
     body: JSON.stringify({

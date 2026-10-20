@@ -20,8 +20,6 @@ export interface OsmMapViewHandle {
   setRecorrido: (puntos: OsmPoint[]) => void;
   /** Reemplaza los marcadores de incidentes. */
   setIncidentes: (marcadores: OsmMarker[]) => void;
-  /** Reemplaza los marcadores de checkpoints (verificaciones de ronda). */
-  setCheckpoints: (marcadores: OsmMarker[]) => void;
   /** Reemplaza el polígono de la zona/ruta asignada. */
   setZona: (puntos: OsmPoint[]) => void;
   /** Actualiza el popup de la zona con las calles */
@@ -70,10 +68,6 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
   const pendingZonaRef = useRef<OsmPoint[] | null>(zona.length > 0 ? zona : null);
   const pendingUbicacionRef = useRef<OsmPoint | null>(null);
   const pendingIncidentesRef = useRef<OsmMarker[] | null>(null);
-  const pendingCheckpointsRef = useRef<OsmMarker[] | null>(null);
-  // El recorrido también se perdía si llegaba antes de que el WebView terminara
-  // de cargar (injectJavaScript sobre una página sin Leaflet no hace nada).
-  const pendingRecorridoRef = useRef<OsmPoint[] | null>(null);
   // "Ver mi ruta"/"Mi ubicación" tocados antes de que el WebView termine de
   // cargar quedaban en la nada: centrarEnZona guardaba la zona pendiente
   // pero nunca recentraba después, y centrarEnMiUbicacion no tenía ningún
@@ -103,10 +97,6 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
       );
     },
     setRecorrido: (puntos) => {
-      if (!mapReadyRef.current) {
-        pendingRecorridoRef.current = puntos;
-        return;
-      }
       webRef.current?.injectJavaScript(
         `window.setRecorrido(${JSON.stringify(
           puntos.map((p) => [p.latitud, p.longitud]),
@@ -127,17 +117,6 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
             color: m.color ?? '#E53935',
             title: m.title ?? '',
           })),
-        )}); true;`,
-      );
-    },
-    setCheckpoints: (marcadores) => {
-      if (!mapReadyRef.current) {
-        pendingCheckpointsRef.current = marcadores;
-        return;
-      }
-      webRef.current?.injectJavaScript(
-        `window.setCheckpoints(${JSON.stringify(
-          marcadores.map((m) => ({ id: m.id, lat: m.latitud, lng: m.longitud, title: m.title ?? '' })),
         )}); true;`,
       );
     },
@@ -215,22 +194,6 @@ export const OsmMapView = forwardRef<OsmMapViewHandle, Props>(function OsmMapVie
             setTimeout(() => {
               webRef.current?.injectJavaScript(`window.centrarEnMiUbicacion(); true;`);
             }, 350);
-          }
-          if (pendingRecorridoRef.current) {
-            const r = pendingRecorridoRef.current;
-            pendingRecorridoRef.current = null;
-            webRef.current?.injectJavaScript(
-              `window.setRecorrido(${JSON.stringify(r.map((p) => [p.latitud, p.longitud]))}); true;`,
-            );
-          }
-          if (pendingCheckpointsRef.current && pendingCheckpointsRef.current.length > 0) {
-            const c = pendingCheckpointsRef.current;
-            pendingCheckpointsRef.current = null;
-            webRef.current?.injectJavaScript(
-              `window.setCheckpoints(${JSON.stringify(
-                c.map((mk) => ({ id: mk.id, lat: mk.latitud, lng: mk.longitud, title: mk.title ?? '' })),
-              )}); true;`,
-            );
           }
           if (pendingIncidentesRef.current && pendingIncidentesRef.current.length > 0) {
             const m = pendingIncidentesRef.current;
@@ -408,33 +371,6 @@ function buildHtml(
 
     window.setRecorrido = function (puntos) {
       recorridoLinea.setLatLngs(puntos);
-    };
-
-    var checkpointMarcadores = {};
-    window.setCheckpoints = function (marcadores) {
-      var vistos = {};
-      marcadores.forEach(function (m) {
-        vistos[m.id] = true;
-        if (checkpointMarcadores[m.id]) {
-          checkpointMarcadores[m.id].setLatLng([m.lat, m.lng]);
-        } else {
-          var icono = L.divIcon({
-            className: '',
-            html: '<div style="width:22px;height:22px;border-radius:50%;background:#F59E0B;border:3px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5);color:white;font:700 12px/16px sans-serif;text-align:center;">&#10003;</div>',
-            iconSize: [22, 22],
-            iconAnchor: [11, 11]
-          });
-          var mk = L.marker([m.lat, m.lng], { icon: icono }).addTo(map);
-          if (m.title) mk.bindPopup(m.title);
-          checkpointMarcadores[m.id] = mk;
-        }
-      });
-      Object.keys(checkpointMarcadores).forEach(function (id) {
-        if (!vistos[id]) {
-          map.removeLayer(checkpointMarcadores[id]);
-          delete checkpointMarcadores[id];
-        }
-      });
     };
 
     window.setIncidentes = function (marcadores) {
