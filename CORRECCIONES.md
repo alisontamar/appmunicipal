@@ -3,6 +3,10 @@
 Resumen de las 9 correcciones pedidas: qué se hizo, dónde, y qué queda pendiente
 (y por qué). `npx tsc --noEmit` pasa sin errores con todos los cambios.
 
+> **Nota histórica:** el punto 8 describe el estado original (subida directa a
+> Supabase Storage). Hoy las evidencias se suben a `POST /api/media` y el backend
+> las guarda en RustFS; ver `README.md` y `MANUAL_TECNICO.md` §9.
+
 ## ✅ Hecho
 
 ### 1. Logo de la alcaldía al instalar la app

@@ -31,6 +31,12 @@ npm run android
 
 En el login, **cualquier usuario y contraseña** ingresan (fase estática).
 
+## Evidencias y despliegue Docker
+
+Las fotos/videos se suben con `src/utils/storage.ts` a `POST /api/media` del backend, usando el token Bearer de la sesión. Ya no se usa el Worker de Cloudflare ni se guardan claves de subida en la app. El backend escribe el archivo en **RustFS** (S3 autohospedado) y devuelve una URL `/media/<clave>` que se guarda en `selfieInicioUrl` / `evidencias[].url`.
+
+Los tres proyectos se levantan con Docker + nginx desde `../gamc-stack` (`docker compose up -d --build`). La app móvil solo necesita apuntar `EXPO_PUBLIC_API_URL` al origen público del proxy (por ejemplo `http://IP_DE_LA_PC:8080/api`). Instructivo de arranque y verificación de archivos en RustFS: [../gamc-stack/README.md](../gamc-stack/README.md).
+
 ## Estructura
 
 ```

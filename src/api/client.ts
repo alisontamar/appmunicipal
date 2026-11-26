@@ -182,7 +182,9 @@ export async function request<T>(path: string, init: RequestInit = {}, _reintent
   }
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+    // Un FormData lleva su propio boundary: fijar application/json rompe la
+    // subida de evidencias (multer no encuentra el campo "file").
+    ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
     ...((init.headers as Record<string, string> | undefined) ?? {}),
   };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;

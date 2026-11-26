@@ -16,7 +16,7 @@ Módulo: Registro y Control de Guardias Municipales — componente **app móvil*
 6. [Autenticación y sesión](#6-autenticación-y-sesión)
 7. [Flujo de turno (ShiftContext)](#7-flujo-de-turno-shiftcontext)
 8. [Geolocalización](#8-geolocalización)
-9. [Evidencias (cámara y Supabase Storage)](#9-evidencias-cámara-y-supabase-storage)
+ 9. [Evidencias (cámara y RustFS vía API)](#9-evidencias-cámara-y-rustfs-vía-api)
 10. [Integración con el resto del sistema](#10-integración-con-el-resto-del-sistema)
 11. [Navegación y pantallas](#11-navegación-y-pantallas)
 12. [Modo offline](#12-modo-offline)
@@ -67,8 +67,8 @@ compartido. Ver [§10](#10-integración-con-el-resto-del-sistema).
 | Biometría | `expo-local-authentication` (huella/Face ID para confirmar SOS y, opcionalmente, login) |
 | Mapa | OpenStreetMap/Leaflet dentro de un `WebView` (`react-native-webview`) — **sin API key, sin costo** |
 | Backend | Node.js/Express (repo aparte) sobre **PostgreSQL** |
-| Base de datos / Storage / Auth edge | **Supabase** (Postgres, Storage de evidencias, Edge Function de reseteo de contraseña) |
-| Hosting | Backend, DB y panel web en el servidor propio (`api.sistec-unifranz.com`). La DB/Storage ya no están en Supabase |
+| Base de datos / Storage / Auth edge | **Supabase** solo para la Edge Function de reseteo de contraseña; las evidencias se guardan en **RustFS** desde el backend |
+| Hosting | Backend, web y RustFS en Docker detrás de nginx; la app apunta al origen público del proxy |
 | Build/distribución | **EAS Build** (perfiles `development` / `preview` / `production`) |
 
 No hay librería de manejo de formularios (los forms son `useState` simples), ni
@@ -95,16 +95,17 @@ librería de estilos (usa `StyleSheet.create` de React Native + un theme propio 
                     │   PostgreSQL (Supabase) │
                     └────────────────────────┘
 
-        App móvil también habla DIRECTO con Supabase para:
-        - Storage (subida de fotos/video de evidencia)
+        App móvil también habla DIRECTO con Supabase solo para:
         - Edge Function `guardia-password-reset` (recuperar contraseña)
+
+        Las evidencias van por la API al bucket RustFS del backend.
 ```
 
 Puntos clave de diseño:
 
-- **La app nunca habla con Postgres directamente** salvo para Storage y la Edge
-  Function de recuperación de contraseña — todo lo demás (login, turnos, hechos,
-  mandados, telemetría, patrullas) pasa por la API REST del backend Express.
+- **La app nunca habla con Postgres directamente**: solo llama a la Edge Function
+  de recuperación de contraseña; todo lo demás (login, turnos, hechos, mandados,
+  telemetría, patrullas y subida de evidencias) pasa por la API REST.
 - **Envelope de respuesta del backend**: éxito → `{ data: ... }`, error →
   `{ error: { code, message, details? } }` (`src/api/client.ts`).
 - **Sesión por JWT**: `accessToken` + `refreshToken`, ambos persistidos en
@@ -142,7 +143,7 @@ src/
 ├── theme/        Paleta institucional, tipografía, espaciado
 ├── types/        Modelo de datos (espeja las entidades del backend)
 └── utils/        location (GPS), backgroundLocationTask (GPS en segundo
-                  plano), geo (Haversine), storage (subida a Supabase),
+                  plano), geo (Haversine), storage (subida al API / RustFS),
                   offlineQueue, biometria, format
 ```
 
@@ -305,7 +306,7 @@ automáticamente.
   GPS estando de pie).
 - **Frecuencia**: ~15s/25m en primer plano, ~20s/25m en segundo plano.
 
-## 9. Evidencias (cámara y Supabase Storage)
+## 9. Evidencias (cámara y RustFS vía API)
 
 **Archivos:** `src/utils/storage.ts`, `src/screens/service/StartServiceCameraScreen.tsx`,
 `src/screens/incidents/EvidenceCameraScreen.tsx`, `src/screens/service/CheckpointCameraScreen.tsx`.
@@ -316,15 +317,13 @@ automáticamente.
   para incidentes; el/los URI(s) locales vuelven a `RegisterIncidentScreen`
   por parámetros de navegación, junto con un `borrador` del formulario para no
   perder lo ya escrito al ir a la cámara y volver.
-- **Subida directa a Supabase Storage** (bucket `evidencias`, carpetas
-  `selfies/`, `incidentes/`, `checkpoints/`): el backend Express no tiene
-  endpoint propio de subida de archivos, así que `subirEvidencia()` sube el
-  blob directo con la publishable key del proyecto y devuelve la URL pública,
-  que es lo que finalmente viaja al backend (`selfieInicioUrl`,
-  `evidencias[].url`).
-- **Seguridad del bucket**: público solo para lectura; `INSERT` habilitado
-  para `anon` pero acotado por policy a esas 3 carpetas; sin `UPDATE`/`DELETE`
-  para `anon` (nadie puede pisar o borrar evidencia ajena con la key pública).
+- **Subida al backend** (`POST /api/media`, multipart con Bearer): `subirEvidencia()`
+  manda el archivo al API, que lo guarda en **RustFS** (bucket S3 privado) y
+  devuelve una URL `/media/<clave>`. Esa URL es la que viaja después en
+  `selfieInicioUrl` / `evidencias[].url`. La app no guarda credenciales de
+  almacenamiento.
+- **Seguridad**: el bucket de RustFS no se expone; el reverse proxy nginx es el
+  único punto público y el API solo sirve claves `fotos|videos/<uuid>.<ext>`.
 
 ## 10. Integración con el resto del sistema
 
@@ -531,8 +530,9 @@ incluya en el bundle del cliente.
 | Variable | Uso | Notas |
 |---|---|---|
 | `EXPO_PUBLIC_API_URL` | Base URL del backend Express | Si se omite, se deduce automáticamente: IP LAN de Metro en desarrollo, o la URL de producción (`https://api.sistec-unifranz.com/api`) en build standalone (ver `src/api/client.ts`) |
-| `EXPO_PUBLIC_SUPABASE_URL` | Proyecto Supabase | Usado para Storage y la Edge Function de recuperación de contraseña |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Publishable key de Supabase | Pública por diseño (va embebida en el APK); el acceso real queda acotado por las policies del bucket y por la Edge Function |
+| `EXPO_PUBLIC_API_URL` | Origen público del proxy nginx | Debe terminar en `/api` (ej. `http://IP:8080/api`) |
+| `EXPO_PUBLIC_SUPABASE_URL` | Proyecto Supabase | Solo para la Edge Function de recuperación de contraseña |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Publishable key de Supabase | Pública por diseño (va embebida en el APK); el acceso real queda acotado por la Edge Function |
 | `EXPO_PUBLIC_API_PORT` | Puerto del backend local (opcional) | Default `4001`, solo relevante calculando la URL por defecto en desarrollo |
 
 > No se necesita ninguna API key de mapas: el mapa usa tiles públicos de
@@ -685,12 +685,13 @@ Express.
 |---|---|---|
 | `POST /checkpoints` | Registrar verificación periódica de ronda (foto + ubicación) | Guarda el checkpoint; despeja el aviso pendiente en la app |
 
-### Directo a Supabase (no pasan por el backend Express)
+### Directo a Supabase (no pasa por el backend Express)
 
 | Llamada | Para qué |
 |---|---|
-| `POST {SUPABASE_URL}/storage/v1/object/evidencias/{selfies\|incidentes\|checkpoints}/...` | Subir selfie/foto/video antes de mandar la URL al backend (`src/utils/storage.ts`) |
 | `POST {SUPABASE_URL}/functions/v1/guardia-password-reset` | Recuperar contraseña (Edge Function, sin JWT) (`src/api/auth.ts`) |
+
+La subida de evidencias pasa por `POST /api/media` (ver §9) y ya no llama a Supabase Storage.
 
 ## 20. Glosario
 

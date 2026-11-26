@@ -1,20 +1,15 @@
 /**
- * Subida de fotos/videos de evidencia a Cloudflare R2 (bucket "evidencias").
+ * Subida de fotos/videos de evidencia al API GAMC.
  *
- * La app no tiene llaves de R2: le manda el archivo a un Worker de Cloudflare
- * (subir-evidencias) que valida la clave compartida, el tipo, el tamano y la
- * carpeta, lo guarda en el bucket y responde con la URL publica. Al backend
- * solo se le pasa esa URL (campos `selfieInicioUrl` / `evidencias[].url`).
+ * La app NO guarda credenciales de almacenamiento: manda el archivo a
+ * `POST /api/media` con el token Bearer de la sesión. El backend lo escribe en
+ * RustFS (bucket privado) y devuelve la URL pública `/media/<clave>`, que es la
+ * que se envía después en `selfieInicioUrl` / `evidencias[].url`.
  *
- * Las fotos viejas siguen en Supabase con sus URLs; solo las nuevas van a R2.
- *
- * Los valores tienen fallback en codigo porque en builds standalone las
- * variables EXPO_PUBLIC_* a veces no llegan al bundle (ver api/client.ts).
+ * El parámetro `carpeta` se conserva por compatibilidad con los callers
+ * existentes; el servidor decide la carpeta (`fotos` / `videos`) según el MIME.
  */
-const UPLOAD_URL =
-  process.env.EXPO_PUBLIC_UPLOAD_URL || 'https://subir-evidencias.cbbe-alisontamara-gomez-vi.workers.dev';
-const UPLOAD_KEY =
-  process.env.EXPO_PUBLIC_UPLOAD_KEY || 'b7723c24ad1b825559fbd2d4fa79f0501ad7dbc3b8d3e574';
+import { request } from '@/api/client';
 
 export type CarpetaEvidencia = 'selfies' | 'incidentes' | 'checkpoints';
 
@@ -24,28 +19,18 @@ function extensionDe(uri: string): string {
   return punto >= 0 ? limpio.slice(punto + 1).toLowerCase() : 'jpg';
 }
 
-/**
- * Sube un archivo local (URI de expo-camera) a R2 y devuelve su URL publica.
- * Si falla la subida, propaga el error para que quien llama decida como
- * manejarlo (p. ej. reintentar u offline-queue).
- */
-export async function subirEvidencia(localUri: string, carpeta: CarpetaEvidencia): Promise<string> {
+/** Sube un archivo local (URI de expo-camera) y devuelve su URL pública. */
+export async function subirEvidencia(localUri: string, _carpeta?: CarpetaEvidencia): Promise<string> {
   const respuestaArchivo = await fetch(localUri);
   const blob = await respuestaArchivo.blob();
-  const tipo = blob.type || `image/${extensionDe(localUri) === 'png' ? 'png' : 'jpeg'}`;
+  const extension = extensionDe(localUri);
+  const tipo = blob.type || `image/${extension === 'png' ? 'png' : 'jpeg'}`;
 
-  const res = await fetch(`${UPLOAD_URL}/?carpeta=${carpeta}`, {
-    method: 'POST',
-    headers: { 'x-upload-key': UPLOAD_KEY, 'Content-Type': tipo },
-    body: blob,
-  });
+  // React Native espera el descriptor `{ uri, name, type }` en el FormData.
+  const datos = new FormData();
+  datos.append('file', { uri: localUri, name: `evidencia.${extension}`, type: tipo } as unknown as Blob);
 
-  if (!res.ok) {
-    const texto = await res.text().catch(() => '');
-    throw new Error(`No se pudo subir el archivo (${res.status}): ${texto}`);
-  }
-
-  const { url } = (await res.json()) as { url?: string };
-  if (!url) throw new Error('El servidor de archivos no devolvio la URL.');
+  const { url } = await request<{ url: string }>('/media', { method: 'POST', body: datos });
+  if (!url) throw new Error('El servidor de archivos no devolvió la URL.');
   return url;
 }
